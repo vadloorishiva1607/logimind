@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  db:
+    # Plain Postgres now -- pgvector extension is no longer needed since
+    # RAG storage moved to ChromaDB (see backend/app/agents/rag.py).
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: logimind
+      POSTGRES_PASSWORD: logimind_dev_pw
+      POSTGRES_DB: logimind
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logimind"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://logimind:logimind_dev_pw@db:5432/logimind
+      CHROMA_PERSIST_DIR: /app/chroma_data
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - chroma_data:/app/chroma_data
+
+volumes:
+  pgdata:
+  chroma_data:

@@ -1,0 +1,16 @@
+SHIPMENT DELAY AND RISK ESCALATION SOP
+
+A shipment is marked "delayed" when actual ETA exceeds scheduled ETA by more
+than 60 minutes. Common delay reasons include traffic, weather, mandatory
+driver rest breaks (DOT hours-of-service compliance), mechanical issues, and
+loading/unloading dock delays.
+
+A single delayed shipment with a known, documented cause is considered
+routine and requires no escalation. A pattern of 3 or more delays for the
+same driver or the same route within a 2-week period should be escalated as
+a systemic risk, cross-referencing Driver and Performance data to determine
+whether the pattern is route-related or driver-related.
+
+Shipments delayed with no recorded reason code should be flagged as "cause
+unconfirmed" rather than assigned a probable cause, since guessing a wrong
+cause can misdirect a real investigation.

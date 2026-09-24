@@ -1,0 +1,17 @@
+SAFETY AND PERFORMANCE REVIEW POLICY
+
+Driver performance is tracked on three primary metrics: on-time delivery
+percentage, safety score, and incident count. A safety score decline of
+more than 10 points over a rolling 3-week period should trigger a
+recommended performance review, regardless of whether an incident has
+occurred, since declining scores often precede reportable incidents.
+
+A single incident report, combined with any safety score decline in the
+same period, should be treated as a higher-priority review candidate than
+either factor alone.
+
+Performance reviews are conducted by a Driver Manager and may result in
+additional training, a documented warning, or in repeated cases, referral
+toward the Driver Termination Policy process. The AI assistant's role is
+limited to identifying and explaining the pattern, and recommending that a
+review take place.
