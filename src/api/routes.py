@@ -1,19 +1,13 @@
 from fastapi import FastAPI, Depends
-from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.models.db import get_db
-from app.graph import ask, close_checkpointer
+from src.agent.executor import ask
+from src.agent.memory import close_checkpointer
+from src.api.schemas import ChatRequest
 
 app = FastAPI(title="LogiMind")
-
-
-class ChatRequest(BaseModel):
-    question: str
-    # Identifies the conversation for cross-turn memory. In the demo UI this
-    # is the browser session ID; falls back to "default" for quick testing.
-    thread_id: str = "default"
 
 
 @app.get("/health")
