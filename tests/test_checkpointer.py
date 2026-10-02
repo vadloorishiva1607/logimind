@@ -15,13 +15,14 @@ import os
 
 os.environ["DATABASE_URL"] = "postgresql://postgres:testpass@localhost:5432/logimind_test"
 
-import app.agents.settlement as settlement_mod
+import src.tools.settlement as settlement_mod
 
 # Avoid a real LLM/DB call inside settlement_node -- we only care about
 # graph-level state persistence here.
 settlement_mod.run_settlement_agent = lambda db, driver_id, question: f"(mock answer for {driver_id})"
 
-from app.graph import ask, close_checkpointer  # noqa: E402
+from src.agent.executor import ask   # noqa: E402
+from src.agent.memory import close_checkpointer
 
 db = None  # unused by the mocked settlement agent
 

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from src.models.db import get_db
 from app.graph import ask, close_checkpointer
 
 app = FastAPI(title="LogiMind")

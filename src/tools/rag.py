@@ -11,7 +11,7 @@ import os
 
 import chromadb
 
-from app.llm import get_llm, get_embeddings
+from src.models.llm_client import get_llm, get_embeddings
 
 CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_data")
 COLLECTION_NAME = "policy_chunks"

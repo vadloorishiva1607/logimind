@@ -9,7 +9,7 @@ Negative scenario: fewer than 2 settlement records for a driver -> return
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.llm import get_llm
+from src.models.llm_client import get_llm
 
 
 def get_driver_settlement_history(db: Session, driver_id: str, limit: int = 2):
