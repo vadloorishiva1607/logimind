@@ -30,7 +30,7 @@ def get_driver_settlement_history(db: Session, driver_id: str, limit: int = 2):
     return rows
 
 
-def run_settlement_agent(db: Session, driver_id: str) -> str:
+def run_settlement_agent(db: Session, driver_id: str, question: str = "") -> str:
     history = get_driver_settlement_history(db, driver_id, limit=2)
 
     if len(history) < 2:
@@ -53,8 +53,9 @@ def run_settlement_agent(db: Session, driver_id: str) -> str:
     llm = get_llm()
     prompt = (
         "You are the Settlement Agent in a logistics assistant. Using ONLY the "
-        "evidence below, explain in 2-3 sentences why the driver's settlement "
-        "changed. Do not invent numbers not present in the evidence.\n\n"
+        "evidence below, answer the driver's question in 2-3 sentences. "
+        "Do not invent numbers not present in the evidence.\n\n"
+        f"Driver's question: {question}\n\n"
         f"Evidence:\n{evidence}"
     )
     response = llm.invoke(prompt)
