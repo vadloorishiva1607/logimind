@@ -5,9 +5,18 @@ from sqlalchemy.orm import Session
 from src.models.db import get_db
 from src.agent.executor import ask
 from src.agent.memory import close_checkpointer
+from src.tools.rag import get_chroma_collection
 from src.api.schemas import ChatRequest
 
 app = FastAPI(title="LogiMind")
+
+
+@app.on_event("startup")
+def startup():
+    # Pre-create the ChromaDB client on the main thread/event loop at
+    # app startup, rather than lazily on the first RAG request. See
+    # rag.py's get_chroma_collection() docstring/comment for why.
+    get_chroma_collection()
 
 
 @app.get("/health")
