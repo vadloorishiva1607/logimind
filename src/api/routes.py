@@ -23,7 +23,7 @@ def health_db(db: Session = Depends(get_db)):
 
 @app.post("/chat")
 def chat(req: ChatRequest, db: Session = Depends(get_db)):
-    result = ask(db, req.question, thread_id=req.thread_id)
+    result = ask(db, req.question, thread_id=req.thread_id, role=req.role)
     return result
 
 
