@@ -21,10 +21,25 @@ COLLECTION_NAME = "policy_chunks"
 # the pgvector version's SIMILARITY_THRESHOLD.
 DISTANCE_THRESHOLD = 0.8
 
+# Cached singleton -- chromadb's PersistentClient (Rust-backed) must not be
+# repeatedly created/torn down per request. Doing so inside a FastAPI
+# request (which runs on a background worker thread, not the main thread)
+# was found to corrupt the shared Rust binding state for that path after
+# the first failure, causing every subsequent /chat call for RAG to fail
+# with "chromadb.errors.InternalError: Permission denied (os error 13)"
+# even though a fresh standalone script using the exact same path worked
+# fine. Build the client once, lazily, on first use, and reuse it for the
+# lifetime of the process -- same pattern as src/agent/memory.py's
+# get_checkpointer().
+_collection = None
+
 
 def get_chroma_collection():
-    client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
-    return client.get_or_create_collection(name=COLLECTION_NAME)
+    global _collection
+    if _collection is None:
+        client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
+        _collection = client.get_or_create_collection(name=COLLECTION_NAME)
+    return _collection
 
 
 def retrieve_policy_chunks(question: str, user_role: str, k: int = 5):
@@ -53,8 +68,6 @@ def run_rag_agent(question: str, user_role: str) -> str:
     distances = results.get("distances", [[]])[0]
 
     if not documents or distances[0] > DISTANCE_THRESHOLD:
-        # Negative scenario: nothing relevant, or nothing visible to this
-        # role -- do not fabricate an answer.
         return "I couldn't find a matching policy for that question."
 
     evidence_blocks = "\n\n".join(
