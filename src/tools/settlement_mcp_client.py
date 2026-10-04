@@ -13,6 +13,7 @@ this file elsewhere, fix `_SERVER_PATH` accordingly.
 """
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -25,6 +26,18 @@ _SERVERS = {
         "command": sys.executable,
         "args": [_SERVER_PATH],
         "transport": "stdio",
+        # The MCP SDK's stdio transport does NOT inherit the parent
+        # process's full environment by default -- it spawns the
+        # subprocess with a restricted environment unless `env` is given
+        # explicitly. Without this, mcp_server.py falls back to its own
+        # hardcoded DATABASE_URL default (localhost) regardless of what
+        # DATABASE_URL is set to here, which is exactly the bug found
+        # live-testing this on 2026-10-04 (see Testing &
+        # Verification Log): the main app connected to RDS fine, but the
+        # MCP subprocess it spawned silently didn't get the same
+        # DATABASE_URL (or OPENAI_API_KEY, if mcp_server.py ever needs
+        # it) passed through.
+        "env": os.environ.copy(),
     }
 }
 
