@@ -14,5 +14,5 @@ langsmith>=0.1.17,<0.2.0
 openai>=1.52.0,<2.0.0
 faker
 chromadb
-mcp>=1.2.0,<2.0.0
+mcp>=1.2,<2
 langchain-mcp-adapters>=0.1.0,<0.2.0

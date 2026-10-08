@@ -28,10 +28,22 @@ from mcp.server.fastmcp import FastMCP
 # (src/models/db.py, src/agent/memory.py) -- read-only usage only. The
 # `logimind_app` role's grants (roles.sql) are SELECT-only, so even a
 # bug here can't write to the operational tables.
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://logimind_app:CHANGE_ME_APP_PASSWORD@localhost:5432/logimind",
-)
+#
+# No default value on purpose: if DATABASE_URL is missing, fail right
+# away with a clear message instead of trying a placeholder password
+# and producing a confusing "authentication failed" error later.
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is not set. Export it (or put it in .env) before "
+        "starting mcp_server.py, e.g. "
+        "postgresql://logimind_app:<password>@<host>:5432/logimind"
+    )
+
+# Upper limit on how much history one tool call can request. An LLM
+# chooses the `weeks` argument, so it could ask for something huge; a
+# year of weekly settlements is far more than any question needs.
+MAX_WEEKS = 52
 
 mcp = FastMCP("logimind-settlement-tools")
 
@@ -45,6 +57,11 @@ def get_settlement_history(driver_id: str, weeks: int = 6) -> list[dict]:
     no settlement rows (not an error) -- the caller decides how to word
     that to the user.
     """
+
+    # Keep the query small and valid no matter what the LLM passes in:
+    # weeks=0 or negative -> 1, weeks=100000 -> 52.
+    weeks = max(1, min(weeks, MAX_WEEKS))
+    
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor() as cur:
