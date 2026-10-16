@@ -1,0 +1,15 @@
+FUEL REIMBURSEMENT AND DEDUCTION POLICY
+
+Fuel costs are deducted from a driver's weekly settlement based on actual
+fuel card transactions recorded during the settlement period. Drivers are
+reimbursed at the company-negotiated fuel rate, not the retail price paid,
+when the two differ by more than 10 percent.
+
+A fuel efficiency baseline of 6.5 MPG is used for standard tractor-trailer
+routes. Deviations below this baseline by more than 15 percent in a given
+week trigger an automatic flag for Fleet Maintenance review, as this may
+indicate a mechanical issue rather than driving behavior.
+
+Fuel deductions above $50 more than the driver's trailing 4-week average
+should be treated as anomalous and are eligible for a Fuel Agent explanation
+citing the specific transactions responsible.

@@ -1,0 +1,16 @@
+SETTLEMENT CALCULATION SOP
+
+Weekly settlement is calculated as: Gross Pay minus Fuel Deduction minus
+Escrow Deduction minus Other Deductions equals Net Pay.
+
+Gross pay is determined by completed, confirmed-delivered shipments within
+the settlement week, calculated per the driver's rate confirmation
+agreement. Fuel deductions reflect actual fuel card transactions for the
+period. Escrow deductions follow the standard weekly contribution unless a
+withdrawal or adjustment applies per the Escrow Withdrawal Policy.
+
+A settlement decrease of more than 15 percent week-over-week should be
+explained by identifying which deduction category changed and by how much,
+cross-referencing Fuel and Escrow agent data before presenting a conclusion
+to the user. If deduction data is incomplete for the period, the explanation
+should state that explicitly rather than estimating.

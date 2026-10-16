@@ -1,0 +1,15 @@
+DRIVER ONBOARDING SOP
+
+New drivers enter "onboarding" status upon signing their initial agreement
+and remain in this status until all required steps are complete: background
+check clearance, DOT medical certification, defensive driving certification,
+and a supervised first-week ride-along.
+
+Onboarding is expected to complete within 30 days of the start date. Drivers
+exceeding 45 days in onboarding status should be flagged for Driver Manager
+follow-up, as this typically indicates a missing document or scheduling
+delay rather than disqualification.
+
+Once all steps are verified, a Driver Manager updates the driver's status to
+"active" in the Logistics Application. The AI assistant may report onboarding
+progress but does not change onboarding status itself.

@@ -1,0 +1,20 @@
+ESCROW WITHDRAWAL AND ADJUSTMENT POLICY
+
+Each driver maintains an escrow account funded by a standard weekly
+contribution, used to cover damage claims, toll violations, and equipment
+deposits. Standard weekly contributions may not exceed $150 without written
+driver consent on file.
+
+Escrow withdrawals require one of the following documented reasons: an
+approved damage claim, an unpaid toll or citation forwarded to the company,
+equipment replacement cost, or a driver-requested early release approved by
+Finance.
+
+Any escrow balance change exceeding 25 percent of the account's average
+balance in a single transaction must be logged with a specific reason code.
+Withdrawals without a matching documented reason should be flagged as an
+unexplained discrepancy for Finance review, not approved retroactively by
+the AI assistant.
+
+The AI assistant may explain escrow balance history but cannot approve,
+reverse, or initiate an escrow adjustment.

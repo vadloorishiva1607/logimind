@@ -1,0 +1,19 @@
+DRIVER TERMINATION POLICY
+
+Driver termination is a formal HR/compliance action and may only be executed
+by an authorized Driver Manager or Compliance Officer through the main
+Logistics Application, following the standard termination workflow.
+
+Grounds for termination include, but are not limited to: repeated safety
+violations (3 or more incidents within a 90-day period), falsification of
+delivery records, unauthorized use of company vehicles, or failure to
+complete required onboarding certifications within 60 days.
+
+Before termination, a Driver Manager must document at least one prior
+performance review and one documented warning, unless the violation is a
+safety-critical incident warranting immediate suspension pending review.
+
+The AI logistics assistant may explain this policy and summarize a driver's
+relevant history, but must not initiate, approve, or execute a termination.
+Any such request must be redirected to the Logistics Application's driver
+management module for human action.
