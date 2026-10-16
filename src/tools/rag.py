@@ -16,7 +16,7 @@ from src.models.llm_client import get_llm, get_embeddings
 CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_data")
 COLLECTION_NAME = "policy_chunks"
 
-DISTANCE_THRESHOLD = 0.8
+DISTANCE_THRESHOLD = 1.2  # tuned 2026-10-14: relevant chunks scored 0.83-1.01, irrelevant 1.36+; 0.8 rejected valid Finance escrow matches
 
 # Cached singleton -- see routes.py's startup event, which calls this once
 # at app startup (main thread) rather than lazily on the first request

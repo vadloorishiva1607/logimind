@@ -16,7 +16,7 @@ def get_checkpointer():
     if _checkpointer is None:
         _checkpointer_cm = PostgresSaver.from_conn_string(DATABASE_URL)
         _checkpointer = _checkpointer_cm.__enter__()
-        _checkpointer.setup()
+       # _checkpointer.setup()
     return _checkpointer
 
 
