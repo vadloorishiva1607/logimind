@@ -85,6 +85,54 @@ def get_settlement_history(driver_id: str, weeks: int = 6) -> list[dict]:
                 row[money_field] = float(row[money_field])
     return rows
 
+@mcp.tool()
+def get_performance_history(driver_id: str, periods: int = 6) -> dict:
+    """Return a driver's last N performance periods (newest first) and the
+    fleet average for the latest period.
+
+    `periods` is clamped to 1-52. Returns {"rows": [...], "fleet": {...} or
+    None}. Each row has: period_start, period_end, on_time_pct,
+    safety_score, late_deliveries, incidents. An empty "rows" list means
+    the driver has no performance history (not an error).
+    """
+    periods = max(1, min(periods, MAX_WEEKS))
+
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT period_start, period_end, on_time_pct, safety_score, "
+                "late_deliveries, incidents FROM performance "
+                "WHERE driver_id = %s ORDER BY period_end DESC LIMIT %s",
+                (driver_id, periods),
+            )
+            cols = [d.name for d in cur.description]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+            cur.execute(
+                "SELECT round(avg(on_time_pct), 2), round(avg(safety_score), 2), "
+                "count(DISTINCT driver_id) FROM performance "
+                "WHERE period_end = (SELECT max(period_end) FROM performance)"
+            )
+            fleet_row = cur.fetchone()
+    finally:
+        conn.close()
+
+    # Same JSON clean-up as the settlement tool: dates -> ISO text,
+    # Decimals -> floats.
+    for row in rows:
+        for k in ("period_start", "period_end"):
+            if row.get(k) is not None:
+                row[k] = row[k].isoformat()
+        for k in ("on_time_pct", "safety_score"):
+            if row.get(k) is not None:
+                row[k] = float(row[k])
+
+    fleet = None
+    if fleet_row and fleet_row[0] is not None:
+        fleet = {"on_time_pct": float(fleet_row[0]),
+                 "safety_score": float(fleet_row[1]),
+                 "drivers": fleet_row[2]}
+    return {"rows": rows, "fleet": fleet}
 
 if __name__ == "__main__":
     # stdio transport: the client launches this file as a child process

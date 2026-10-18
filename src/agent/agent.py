@@ -3,6 +3,7 @@ from langgraph.graph import StateGraph, END
 from src.agent.state import GraphState, DRIVER_ID_RE
 from src.tools.settlement import run_settlement_agent
 from src.tools.rag import run_rag_agent
+from src.tools.performance import run_performance_agent
 
 # Rough keyword heuristic for "this sounds like a policy/SOP question,"
 # used only when no driver_id is present (a driver_id always wins -- it's
@@ -16,11 +17,33 @@ _POLICY_KEYWORDS = (
     "terminat", "compliance", "handbook", "regulation",
 )
 
+# Which driver-data agent a driver question is about. Checked in this order;
+# if neither matches, the conversation's previous agent is reused (follow-ups),
+# and Settlement is the default for a fresh conversation.
+_PERFORMANCE_KEYWORDS =(
+    "safety", "performance", "incident", "accident", "on-time", "on time","ontime", "late deliver", "score",
+)
 
-def _looks_like_policy_question(question: str) -> bool:
+_SETTLEMENT_KEYWORDS = (
+     "settlement", "pay", "deduction", "earning", "gross", "net pay",
+)
+
+# Driver-data agents the Supervisor can route to: route name -> tool function.
+_DRIVER_AGENTS = {
+    "settlement": run_settlement_agent,
+    "performance": run_performance_agent,
+}
+
+def _mentions(question: str, keywords) -> bool:
     q = question.lower()
-    return any(kw in q for kw in _POLICY_KEYWORDS)
+    return any(kw in q for kw in keywords)
 
+def _pick_driver_agent(question: str, last_agent) -> str:
+    if _mentions(question, _PERFORMANCE_KEYWORDS):
+        return "performance"
+    if _mentions(question, _SETTLEMENT_KEYWORDS):
+        return "settlement"
+    return last_agent if last_agent in _DRIVER_AGENTS else "settlement"
 
 def supervisor_node(state: GraphState) -> GraphState:
     question = state["question"]
@@ -28,8 +51,8 @@ def supervisor_node(state: GraphState) -> GraphState:
     driver_id = match.group(0) if match else state.get("driver_id")
 
     if driver_id:
-        route = "settlement"
-    elif _looks_like_policy_question(question):
+        route = _pick_driver_agent(question, state.get("last_agent"))
+    elif _mentions(question, _POLICY_KEYWORDS):
         route = "rag"
     else:
         # Negative scenario (Design Doc Section 5, Orchestration Layer):
@@ -40,31 +63,38 @@ def supervisor_node(state: GraphState) -> GraphState:
     return {**state, "driver_id": driver_id, "route": route}
 
 
-def settlement_node(state: GraphState, db) -> GraphState:
+def _driver_agent_node(state: GraphState, db, agent_name: str) -> GraphState:
+    """Shared node body for the driver-data agents (Settlement, Performance)."""
     driver_id = state.get("driver_id")
     question = state["question"]
 
     if not driver_id:
         answer = (
-            "I need a driver ID (e.g. D102) to look up settlement details. "
+            f"I need a driver ID (e.g. D102) to look up {agent_name} details. "
             "Could you confirm which driver you're asking about?"
         )
     else:
-        answer = run_settlement_agent(db, driver_id, question)
+        answer = _DRIVER_AGENTS[agent_name](db, driver_id, question)
 
-    agents_used = state.get("agents_used", []) + ["settlement"]
+    agents_used = state.get("agents_used",[])+[agent_name]
 
     prior_summary = state.get("memory_summary", "")
-    new_line = f"Asked about {driver_id or 'unknown driver'}: \"{question}\""
+    new_line = f"Asked about {driver_id or 'unknown driver'} ({agent_name}): \"{question}\""
     memory_summary = (prior_summary + "\n" + new_line).strip() if prior_summary else new_line
 
     return {
         **state,
         "answer": answer,
         "agents_used": agents_used,
+        "last_agent": agent_name,
         "memory_summary": memory_summary,
     }
 
+def settlement_node(state: GraphState, db) -> GraphState:
+    return _driver_agent_node(state, db, "settlement")
+
+def performance_node(state: GraphState, db) -> GraphState:
+    return _driver_agent_node(state, db, "performance")
 
 def rag_node(state: GraphState) -> GraphState:
     question = state["question"]
@@ -92,10 +122,11 @@ def clarify_node(state: GraphState) -> GraphState:
     # append to agents_used (no agent actually ran) or memory_summary (no
     # driver/topic was actually established for a future turn to recall).
     answer = (
-        "I'm not sure how to help with that yet. If you're asking about a "
-        "driver's settlement, include a driver ID (e.g. D102). If you're "
-        "asking about a company policy or SOP, try mentioning \"policy\" or "
-        "\"procedure\" so I know to search our documents."
+         "I'm not sure how to help with that yet. If you're asking about a "
+         "driver's settlement or performance (safety score, on-time rate, "
+         "incidents), include a driver ID (e.g. D102). If you're asking about "
+         "a company policy or SOP, try mentioning \"policy\" or \"procedure\" "
+         "so I know to search our documents."
     )
     return {**state, "answer": answer, "agents_used": state.get("agents_used", [])}
 
@@ -104,6 +135,7 @@ def build_graph(db, checkpointer=None):
     graph = StateGraph(GraphState)
     graph.add_node("supervisor", supervisor_node)
     graph.add_node("settlement_agent", lambda state: settlement_node(state, db))
+    graph.add_node("performance_agent", lambda state: performance_node(state, db))
     graph.add_node("rag_agent", rag_node)
     graph.add_node("clarify", clarify_node)
 
@@ -113,11 +145,13 @@ def build_graph(db, checkpointer=None):
         lambda state: state["route"],
         {
             "settlement": "settlement_agent",
+            "performance": "performance_agent",
             "rag": "rag_agent",
             "clarify": "clarify",
         },
     )
     graph.add_edge("settlement_agent", END)
+    graph.add_edge("performance_agent", END)
     graph.add_edge("rag_agent", END)
     graph.add_edge("clarify", END)
 

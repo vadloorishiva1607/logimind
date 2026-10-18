@@ -1,32 +1,73 @@
 """
-src/tools/settlement.py
-
-*** MERGE NOTE — READ BEFORE OVERWRITING YOUR EXISTING FILE ***
-I don't have your current settlement.py's exact text in this session
-(it lived on your machine/EC2, not here). This is a faithful
-reconstruction of what it must do based on agent.py's call signature
-(`run_settlement_agent(db, driver_id, question)`), the "insufficient
-data" branch mentioned in the Testing & Verification Log, and the
-grounded answers already observed in T5/T8 (fuel/escrow deductions,
-"I need a driver ID..." fallback). The ONLY functional change from
-Section 7's scope is swapping the direct DB query for the MCP client
-call. If your real file has different prompt wording, keep YOUR
-wording and just make the equivalent swap:
-    - replace the direct psycopg2/SQLAlchemy settlement query
-    - with: from src.tools.settlement_mcp_client import get_settlement_history_via_mcp
-             records = get_settlement_history_via_mcp(driver_id, weeks=6)
-That's the whole diff Section 7 asks for -- everything else (prompt,
-negative-scenario handling) is supposed to stay the same.
-"""
+src/tools/settlement.py -- Settlement agent.
+Data comes from the MCP server (mcp_server.py, via settlement_mcp_client.py).
+Consistency fix (2026-10-16): week-over-week changes are computed in Python,
+and the prompt tells the LLM to explain the latest week by default. Before
+this, the LLM picked a different drop on different runs (T12/T14/T20).
+ """
 from src.models.llm_client import get_llm
 from src.tools.settlement_mcp_client import get_settlement_history_via_mcp
 
 SETTLEMENT_SYSTEM_PROMPT = """You are LogiMind's Settlement agent. Answer \
-the driver's question using ONLY the settlement records provided below \
--- reference specific weeks and dollar figures from the data. If the \
-data provided is insufficient to answer confidently, say so plainly \
-instead of guessing or inventing figures."""
+using ONLY the settlement data provided below, and quote specific weeks and \
+dollar figures from it.
 
+Rules:
+1. Unless the question explicitly asks about a different week or period, \
+explain the LATEST CHANGE (the most recent week compared with the week \
+before it).
+2. Use the precomputed changes exactly as given. Do not recompute them.
+3. Start with the net pay before and after and the dollar change, then \
+explain which components caused it, largest effect first. Higher \
+deductions reduce net pay; lower gross pay reduces net pay.
+4. If net pay did NOT drop in the latest week, say so plainly, then point \
+to the most recent week where it did drop, if any.
+5. If the data is insufficient to answer, say so instead of guessing."""
+
+
+# Money fields returned by the MCP tool, in the order they're described.
+_FIELDS = (
+    ("net_pay", "net pay"),
+    ("gross_pay", "gross pay"),
+    ("fuel_deduction", "fuel deduction"),
+    ("escrow_deduction", "escrow deduction"),
+) 
+
+def _money(x):
+    return "n/a" if x is None else f"${x:,.2f}"
+
+def _signed(x):
+    return "n/a" if x is None else f"{'+' if x >= 0 else '-'}${abs(x):,.2f}"
+
+def week_over_week(records: list[dict]) -> list[dict]:
+    """Return one comparison per pair of consecutive weeks, newest first."""
+    rows = sorted(records, key=lambda r: r["week_ending"])  # oldest first
+    comparisons = []
+    for prev, cur in zip(rows, rows[1:]):
+        comp = {"from_week": prev["week_ending"], "to_week": cur["week_ending"]}
+        for key, _ in _FIELDS:
+            before, after = prev.get(key), cur.get(key)
+            change = None if before is None or after is None else round(after - before, 2)
+            comp[key] = {"before": before, "after": after, "change": change}
+        comparisons.append(comp)
+    return list(reversed(comparisons))  # newest first
+
+def _describe(comp: dict) -> str:
+    parts = [
+        f"{label} {_money(comp[key]['before'])} -> {_money(comp[key]['after'])} "
+        f"({_signed(comp[key]['change'])})"
+        for key, label in _FIELDS
+     ]
+    return f"Week ending {comp['from_week']} -> week ending {comp['to_week']}: " + "; ".join(parts)
+
+def build_settlement_context(records: list[dict]) -> str:
+    comparisons = week_over_week(records)
+    if not comparisons:
+        return f"Only one week of data is available: {records}"
+    lines = [f"LATEST CHANGE (default focus): {_describe(comparisons[0])}", "",
+             "ALL WEEK-OVER-WEEK CHANGES (newest first):"]
+    lines += [f"- {_describe(c)}" for c in comparisons]
+    return "\n".join(lines)            
 
 def run_settlement_agent(db, driver_id: str, question: str = "") -> str:
     """
@@ -57,8 +98,8 @@ def run_settlement_agent(db, driver_id: str, question: str = "") -> str:
     llm = get_llm()
     prompt = (
         f"{SETTLEMENT_SYSTEM_PROMPT}\n\n"
-        f"Driver: {driver_id}\n"
-        f"Settlement records (most recent first): {records}\n\n"
+        f"Driver: {driver_id}\n\n"
+        f"{build_settlement_context(records)}\n\n"
         f"Question: {question}\n"
         f"Answer:"
     )
