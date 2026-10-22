@@ -58,18 +58,22 @@ def supervisor_node(state: GraphState) -> GraphState:
     question = state["question"]
     match = DRIVER_ID_RE.search(question)
     driver_id = match.group(0) if match else state.get("driver_id")
+    policy_kw = _matched(question, _POLICY_KEYWORDS)
 
     if driver_id:
-        route = _pick_driver_agent(question, state.get("last_agent"))
-    elif _mentions(question, _POLICY_KEYWORDS):
-        route = "rag"
+        route, reason = _pick_driver_agent(question, state.get("last_agent"))
+        if not match:
+            reason += f" (driver {driver_id} taken from memory)"
+    elif policy_kw:
+        route, reason = "rag", f"no driver ID; matched policy keyword '{policy_kw}'"
     else:
         # Negative scenario (Design Doc Section 5, Orchestration Layer):
         # no agent can confidently answer -> ask for clarification instead
         # of guessing which one to call.
         route = "clarify"
-
-    return {**state, "driver_id": driver_id, "route": route}
+        reason = "no driver ID and no policy keyword"
+    logger.info("Supervisor: route=%s driver=%s reason=%s", route, driver_id, reason)
+    return {**state, "driver_id": driver_id, "route": route, "route_reason": reason}
 
 
 def _driver_agent_node(state: GraphState, db, agent_name: str) -> GraphState:
