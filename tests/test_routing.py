@@ -60,18 +60,20 @@ def run():
     passed, failures = 0, []
     for question, memory, expected, label in CASES:
         state = {"question": question, **memory}
-        route = supervisor_node(state)["route"]
+        result = supervisor_node(state)
+        route = result["route"]
         if route == expected:
             passed += 1
         else:
-            failures.append((question, expected, route, label))
+            failures.append((question, expected, route, label, result["route_reason"]))
 
     total = len(CASES)
     print(f"Routing accuracy: {passed}/{total} = {passed / total:.0%}\n")
     if failures:
         print("Misroutes:")
-        for question, expected, route, label in failures:
+        for question, expected, route, label, reason in failures:
             print(f"  - {question!r}: expected {expected}, got {route}  ({label})")
+            print(f"      why: {reason}")
     return passed, total
 
 

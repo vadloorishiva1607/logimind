@@ -1,3 +1,4 @@
+import logging
 from langgraph.graph import StateGraph, END
 
 from src.agent.state import GraphState, DRIVER_ID_RE
@@ -17,6 +18,8 @@ _POLICY_KEYWORDS = (
     "terminat", "compliance", "handbook", "regulation",
 )
 
+logger = logging.getLogger(__name__)
+
 # Which driver-data agent a driver question is about. Checked in this order;
 # if neither matches, the conversation's previous agent is reused (follow-ups),
 # and Settlement is the default for a fresh conversation.
@@ -34,16 +37,22 @@ _DRIVER_AGENTS = {
     "performance": run_performance_agent,
 }
 
-def _mentions(question: str, keywords) -> bool:
+def _matched(question: str, keywords) -> bool:
+    """Return the first keyword found in the question, or None."""
     q = question.lower()
-    return any(kw in q for kw in keywords)
+    return next((kw for kw in keywords if kw in q), None)
 
-def _pick_driver_agent(question: str, last_agent) -> str:
-    if _mentions(question, _PERFORMANCE_KEYWORDS):
-        return "performance"
-    if _mentions(question, _SETTLEMENT_KEYWORDS):
-        return "settlement"
-    return last_agent if last_agent in _DRIVER_AGENTS else "settlement"
+def _pick_driver_agent(question: str, last_agent) -> tuple[str, str]:
+    """Return (route, reason). The reason says which rule fired."""
+    kw = _matched(question, _PERFORMANCE_KEYWORDS)
+    if kw:
+        return "performance", f"matched performance keyword '{kw}'"
+    kw = _matched(question, _SETTLEMENT_KEYWORDS)
+    if kw:
+        return "settlement", f"matched settlement keyword '{kw}'"
+    if last_agent in _DRIVER_AGENTS:
+        return last_agent, f"no topic keyword; follow-up reused last_agent '{last_agent}'"
+    return "settlement", "no topic keyword and no previous agent; defaulted to settlement"
 
 def supervisor_node(state: GraphState) -> GraphState:
     question = state["question"]

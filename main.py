@@ -1,5 +1,4 @@
 from dotenv import load_dotenv
-
 # Must run before anything below is imported -- uvicorn imports
 # "src.api.routes:app" (and transitively src.agent.memory, which reads
 # DATABASE_URL at module import time, not lazily) after this process
@@ -12,6 +11,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import uvicorn
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 if __name__ == "__main__":
     uvicorn.run("src.api.routes:app", host="0.0.0.0", port=8000, reload=False)
