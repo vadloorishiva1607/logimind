@@ -54,11 +54,13 @@ async def _fetch_async(driver_id: str, weeks: int = 6) -> list[dict]:
         )
 
     result = await tool.ainvoke({"driver_id": driver_id, "weeks": weeks})
-    # langchain-mcp-adapters returns the tool's declared return value;
-    # depending on adapter version this can arrive as a JSON string
-    # rather than an already-parsed list -- handle both.
+    # A list return value arrives as one JSON string per item (MCP sends
+    # each list item as its own text content), or as a single JSON string,
+    # depending on the adapter version. Normalize to a list of dicts.
     if isinstance(result, str):
         result = json.loads(result)
+    if isinstance(result, list):
+        result = [json.loads(r) if isinstance(r, str) else r for r in result]
     return result
 
 

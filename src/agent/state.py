@@ -18,6 +18,16 @@ class GraphState(TypedDict, total=False):
     # "rag", or "clarify". Mainly useful for debugging/logging; the
     # conditional edge in agent.py reads this to pick the next node.
     route: Optional[str]
+    #Why the Supervisor picked `route` this turn: which rule fired (e.g#
+    # "matched performance keyword 'safety'"). Logged, and shown by
+    # tests/test_routing.py on a misroute, so routing is explainable.
+    route_reason: Optional[str]
+    # The last driver-data agent that answered in this conversation
+    # ("settlement" or "performance"). Persisted by the checkpointer, so a
+    # follow-up with no topic words ("what about the period before that?")
+    # stays with the same agent instead of falling back to Settlement.
+    # last_agent so that follow-up questions without topic words go back to the agent that answered last,
+    last_agent: Optional[str]
     answer: Optional[str]
     agents_used: list
     # Cross-turn memory: a short running summary, not the full transcript.
