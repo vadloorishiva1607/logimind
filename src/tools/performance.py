@@ -9,7 +9,7 @@ where the LLM chooses the tool and code checks that choice.
 """
 from src.models.llm_client import get_llm
 from src.tools.performance_mcp_client import get_performance_history_via_mcp
-
+from src.agent.output_guardrail import check_answer
 PERFORMANCE_SYSTEM_PROMPT = """You are LogiMind's Performance agent. Answer \
 using ONLY the performance data provided below, and quote specific periods \
 and figures from it.
@@ -107,12 +107,27 @@ def run_performance_agent(db, driver_id: str, question: str = "") -> str:
         )
 
     llm = get_llm()
+    # Sample Context
+    #LATEST PERIOD (2026-10-05 to 2026-10-11): safety score 75.62, on-time 88.59%, late deliveries 3, incidents 1
+    #TREND:
+    #- Change vs previous period: safety score -6.48, on-time -2.61 pts, late deliveries +1, incidents 0
+    #- Safety score has fallen 2 period(s) in a row: 86.40 -> 75.62 (-10.78)
+    #- Incidents in the last 3 period(s): 2
+    # FLEET AVERAGE, latest period (10 drivers): safety score 84.30, on-time 91.75%
+
+    #ALL PERIODS (newest first):
+    #- 2026-10-05 to 2026-10-11: safety 75.62, on-time 88.59%, late 3, incidents 1
+    # - 2026-09-28 to 2026-10-04: safety 82.10, on-time 91.20%, late 2, incidents 1
+    # - 2026-09-21 to 2026-09-27: safety 86.40, on-time 93.00%, late 1, incidents 0
+    # - 2026-09-14 to 2026-09-20: safety 85.00, on-time 92.50%, late 1, incidents 0
+    context = build_performance_context(rows, fleet)
     prompt = (
         f"{PERFORMANCE_SYSTEM_PROMPT}\n\n"
         f"Driver: {driver_id}\n\n"
-        f"{build_performance_context(rows, fleet)}\n\n"
+        f"{context}\n\n"
         f"Question: {question}\n"
         f"Answer:"
     )
     response = llm.invoke(prompt)
-    return response.content if hasattr(response, "content") else str(response)
+    answer = response.content if hasattr(response, "content") else str(response)
+    return check_answer(answer, context, "performance")
