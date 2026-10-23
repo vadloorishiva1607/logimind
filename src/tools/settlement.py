@@ -7,6 +7,7 @@ this, the LLM picked a different drop on different runs (T12/T14/T20).
  """
 from src.models.llm_client import get_llm
 from src.tools.settlement_mcp_client import get_settlement_history_via_mcp
+from src.agent.output_guardrail import check_answer
 
 SETTLEMENT_SYSTEM_PROMPT = """You are LogiMind's Settlement agent. Answer \
 using ONLY the settlement data provided below, and quote specific weeks and \
@@ -96,12 +97,14 @@ def run_settlement_agent(db, driver_id: str, question: str = "") -> str:
         )
 
     llm = get_llm()
+    context = build_settlement_context(records)
     prompt = (
         f"{SETTLEMENT_SYSTEM_PROMPT}\n\n"
         f"Driver: {driver_id}\n\n"
-        f"{build_settlement_context(records)}\n\n"
+        f"{context}\n\n"
         f"Question: {question}\n"
         f"Answer:"
     )
     response = llm.invoke(prompt)
-    return response.content if hasattr(response, "content") else str(response)
+    answer = response.content if hasattr(response, "content") else str(response)
+    return check_answer(answer, context, "settlement")
