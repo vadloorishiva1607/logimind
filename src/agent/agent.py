@@ -2,6 +2,7 @@ import logging
 from langgraph.graph import StateGraph, END
 
 from src.agent.state import GraphState, DRIVER_ID_RE
+from src.agent.guardrails import guardrail_node
 from src.tools.settlement import run_settlement_agent
 from src.tools.rag import run_rag_agent
 from src.tools.performance import run_performance_agent
@@ -146,13 +147,19 @@ def clarify_node(state: GraphState) -> GraphState:
 
 def build_graph(db, checkpointer=None):
     graph = StateGraph(GraphState)
+    graph.add_node("guardrail", guardrail_node)
     graph.add_node("supervisor", supervisor_node)
     graph.add_node("settlement_agent", lambda state: settlement_node(state, db))
     graph.add_node("performance_agent", lambda state: performance_node(state, db))
     graph.add_node("rag_agent", rag_node)
     graph.add_node("clarify", clarify_node)
 
-    graph.set_entry_point("supervisor")
+    graph.set_entry_point("guardrail")
+    graph.add_conditional_edges(
+        "guardrail",
+        lambda state: "blocked" if state.get("blocked_reason") else "ok",
+        {"blocked": END, "ok": "supervisor"},
+    )
     graph.add_conditional_edges(
         "supervisor",
         lambda state: state["route"],
