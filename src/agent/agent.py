@@ -4,6 +4,7 @@ from langgraph.graph import StateGraph, END
 from src.agent.state import GraphState, DRIVER_ID_RE
 from src.agent.guardrails import guardrail_node
 from src.tools.settlement import run_settlement_agent
+from src.tools.escrow import run_escrow_agent
 from src.tools.rag import run_rag_agent
 from src.tools.performance import run_performance_agent
 
@@ -28,6 +29,8 @@ _PERFORMANCE_KEYWORDS =(
     "safety", "performance", "incident", "accident", "on-time", "on time","ontime", "late deliver", "score",
 )
 
+_ESCROW_KEYWORDS = ("escrow",)
+
 _SETTLEMENT_KEYWORDS = (
      "settlement", "pay", "deduction", "earning", "gross", "net pay",
 )
@@ -36,6 +39,7 @@ _SETTLEMENT_KEYWORDS = (
 _DRIVER_AGENTS = {
     "settlement": run_settlement_agent,
     "performance": run_performance_agent,
+     "escrow": run_escrow_agent,
 }
 
 def _matched(question: str, keywords) -> bool:
@@ -48,6 +52,9 @@ def _pick_driver_agent(question: str, last_agent) -> tuple[str, str]:
     kw = _matched(question, _PERFORMANCE_KEYWORDS)
     if kw:
         return "performance", f"matched performance keyword '{kw}'"
+    kw = _matched(question, _ESCROW_KEYWORDS)
+    if kw:
+        return "escrow", f"matched escrow keyword '{kw}'"
     kw = _matched(question, _SETTLEMENT_KEYWORDS)
     if kw:
         return "settlement", f"matched settlement keyword '{kw}'"
@@ -110,6 +117,9 @@ def settlement_node(state: GraphState, db) -> GraphState:
 def performance_node(state: GraphState, db) -> GraphState:
     return _driver_agent_node(state, db, "performance")
 
+def escrow_node(state: GraphState, db) -> GraphState:
+    return _driver_agent_node(state, db, "escrow")
+
 def rag_node(state: GraphState) -> GraphState:
     question = state["question"]
     # Default to the lowest-privilege role if the caller didn't send one,
@@ -137,8 +147,8 @@ def clarify_node(state: GraphState) -> GraphState:
     # driver/topic was actually established for a future turn to recall).
     answer = (
          "I'm not sure how to help with that yet. If you're asking about a "
-         "driver's settlement or performance (safety score, on-time rate, "
-         "incidents), include a driver ID (e.g. D102). If you're asking about "
+         "driver's settlement, escrow or performance (safety score, "
+          "on-time rate, incidents), include a driver ID (e.g. D102). If you're asking about "
          "a company policy or SOP, try mentioning \"policy\" or \"procedure\" "
          "so I know to search our documents."
     )
@@ -151,6 +161,7 @@ def build_graph(db, checkpointer=None):
     graph.add_node("supervisor", supervisor_node)
     graph.add_node("settlement_agent", lambda state: settlement_node(state, db))
     graph.add_node("performance_agent", lambda state: performance_node(state, db))
+    graph.add_node("escrow_agent", lambda state: escrow_node(state, db))
     graph.add_node("rag_agent", rag_node)
     graph.add_node("clarify", clarify_node)
 
@@ -166,12 +177,14 @@ def build_graph(db, checkpointer=None):
         {
             "settlement": "settlement_agent",
             "performance": "performance_agent",
+            "escrow": "escrow_agent",
             "rag": "rag_agent",
             "clarify": "clarify",
         },
     )
     graph.add_edge("settlement_agent", END)
     graph.add_edge("performance_agent", END)
+    graph.add_edge("escrow_agent", END)
     graph.add_edge("rag_agent", END)
     graph.add_edge("clarify", END)
 
