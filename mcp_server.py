@@ -45,6 +45,8 @@ if not DATABASE_URL:
 # year of weekly settlements is far more than any question needs.
 MAX_WEEKS = 52
 
+MAX_TRANSACTIONS = 50
+
 mcp = FastMCP("logimind-settlement-tools")
 
 
@@ -133,6 +135,70 @@ def get_performance_history(driver_id: str, periods: int = 6) -> dict:
                  "safety_score": float(fleet_row[1]),
                  "drivers": fleet_row[2]}
     return {"rows": rows, "fleet": fleet}
+
+@mcp.tool()
+def get_escrow_balance(driver_id: str) -> dict:
+    """Return a driver's CURRENT escrow balance: the balance after their
+    most recent escrow transaction, plus that transaction.
+
+    Use this for "what is the balance now" questions. Returns
+    {"balance": None, "last_transaction": None} if the driver has no
+    escrow transactions (not an error).
+    """
+    conn=psycopg2.connect(DATABASE_URL);
+    try:
+           with conn.cursor() as cur:
+            cur.execute(
+                "SELECT transaction_date, type, amount_usd, balance_after, reason "
+                "FROM escrow_transactions WHERE driver_id = %s "
+                "ORDER BY transaction_date DESC, id DESC LIMIT 1",
+                (driver_id,),
+            )
+            row = cur.fetchone()
+            cols = [d.name for d in cur.description]
+    finally:
+        conn.close()
+    if row is None
+       return {"balance": None, "last_transaction": None}
+    last = _clean_escrow_row(dict(zip(cols, row)))
+    return {"balance": last["balance_after"], "last_transaction": last}    
+
+@mcp.tool()
+def get_escrow_history(driver_id: str, limit: int = 10) -> dict:
+    """Return a driver's last N escrow transactions (newest first).
+
+    Use this to explain WHY a balance changed: deposits, withdrawals and
+    adjustments with their reasons. `limit` is clamped to 1-50. Returns
+    {"rows": [...]}; each row has transaction_date, type, amount_usd,
+    balance_after, reason. An empty list means no escrow history.
+    """
+    limit = max(1, min(limit, MAX_TRANSACTIONS))
+
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT transaction_date, type, amount_usd, balance_after, reason "
+                "FROM escrow_transactions WHERE driver_id = %s "
+                "ORDER BY transaction_date DESC, id DESC LIMIT %s",
+                (driver_id, limit),
+            )
+            cols = [d.name for d in cur.description]
+            rows = [_clean_escrow_row(dict(zip(cols, r))) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+    return {"rows": rows}
+
+def _clean_escrow_row(row: dict) -> dict:
+    """Make one escrow row JSON-safe: date -> ISO text, Decimal -> float."""
+    if row.get("transaction_date") is not None:
+        row["transaction_date"] = row["transaction_date"].isoformat()
+    for k in ("amount_usd", "balance_after"):
+        if row.get(k) is not None:
+            row[k] = float(row[k])
+    return row
+
 
 if __name__ == "__main__":
     # stdio transport: the client launches this file as a child process
