@@ -158,7 +158,7 @@ def get_escrow_balance(driver_id: str) -> dict:
             cols = [d.name for d in cur.description]
     finally:
         conn.close()
-    if row is None
+    if row is None:
        return {"balance": None, "last_transaction": None}
     last = _clean_escrow_row(dict(zip(cols, row)))
     return {"balance": last["balance_after"], "last_transaction": last}    
