@@ -37,6 +37,11 @@ CASES = [
     ("And his safety score?", {"driver_id": "D102", "last_agent": "settlement"}, "performance", "follow-up switches topic to performance"),
     ("And his pay?", {"driver_id": "D104", "last_agent": "performance"}, "settlement", "follow-up switches topic to settlement"),
     ("Compare with D105", {"driver_id": "D102", "last_agent": "settlement"}, "settlement", "new driver, same topic"),
+    # --- Escrow ---
+    ("What is D105's current escrow balance?", {}, "escrow", "escrow keyword"),
+    ("Show D105's escrow withdrawals", {}, "escrow", "escrow keyword, not settlement"),
+    ("What about before that?", {"driver_id": "D105", "last_agent": "escrow"}, "escrow", "follow-up stays with escrow"),
+   
     # --- Policy questions (RAG) ---
     ("What is the escrow policy?", {}, "rag", "policy keyword"),
     ("What is the driver termination procedure?", {}, "rag", "procedure keyword"),
@@ -50,7 +55,7 @@ CASES = [
     # --- Tricky wording the keyword rules may get wrong ---
     ("How's D104 driving lately?", {}, "performance", "no keyword: 'driving' means performance"),
     ("Is D102 being safe on the road?", {}, "performance", "'safe' is not 'safety'"),
-    ("Why did D105's escrow balance drop?", {}, "settlement", "escrow -> Settlement until the Escrow agent exists"),
+    ("Why did D105's escrow balance drop?", {}, "escrow", "escrow keyword -> Escrow agent"),
     ("Why is D102 earning less and having more incidents?", {}, "performance", "multi-intent: both agents needed; today only one runs"),
     ("What is D102's policy on pay?", {}, "settlement", "driver ID wins over policy words"),
 ]
