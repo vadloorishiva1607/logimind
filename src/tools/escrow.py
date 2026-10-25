@@ -137,6 +137,7 @@ def run_escrow_agent(db, driver_id: str, question: str = "") -> str:
         f"Answer:"
     )
     response = llm.invoke(prompt)
+    answer = response.content if hasattr(response, "content") else str(response)
     answer = check_answer(answer, context, "escrow")
     return _ensure_discrepancy_reported(answer, tool, data)
 
