@@ -22,14 +22,16 @@ Rules:
 1. Use the precomputed figures exactly as given. Do not recompute them.
 2. For a balance question, give the current balance and the date and type \
 of the latest transaction.
-3. For a question about why the balance changed, lead with the LATEST \
-CHANGE: the balance before and after, and the transaction that caused it, \
-with its reason.
-4. If the data lists an UNEXPLAINED DISCREPANCY, state it plainly with its \
+3. For a question about why the balance changed, explain the most recent \
+change in plain sentences: the balance before and after, and the \
+transaction that caused it, with its reason.
+4. If the data lists an unexplained discrepancy, state it plainly with its \
 amount, say it needs review by Finance, and do not guess its cause.
 5. You cannot change escrow. If asked, say a Finance user must do it in \
 the existing application.
-6. If the data is insufficient to answer, say so instead of guessing."""
+6.If the data is insufficient to answer, say so instead of guessing.
+7. Write the answer in your own plain sentences. Do not copy the data \
+lines or their labels."""
 
 
 def _money(x):
@@ -135,5 +137,21 @@ def run_escrow_agent(db, driver_id: str, question: str = "") -> str:
         f"Answer:"
     )
     response = llm.invoke(prompt)
-    answer = response.content if hasattr(response, "content") else str(response)
-    return check_answer(answer, context, "escrow")
+    answer = check_answer(answer, context, "escrow")
+    return _ensure_discrepancy_reported(answer, tool, data)
+
+def _ensure_discrepancy_reported(answer: str, tool: str, data: dict) -> str:
+    """Safety net: a discrepancy found by code must reach the user, even if
+    the LLM left it out. Code adds it rather than trusting the LLM to."""
+    if tool != "get_escrow_history":
+        return answer
+    problems = reconcile(data["rows"])
+    if not problems or "discrepanc" in answer.lower():
+        return answer
+    notes = "; ".join(
+        f"{p['date']}: recorded balance {_money(p['recorded'])}, expected "
+        f"{_money(p['expected'])}, difference {_signed(p['difference'])}"
+        for p in problems
+    )
+    return (f"{answer}\n\nUnexplained discrepancy found by reconciliation "
+            f"(needs review by Finance): {notes}.")
