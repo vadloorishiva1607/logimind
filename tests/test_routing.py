@@ -37,6 +37,7 @@ CASES = [
     ("And his safety score?", {"driver_id": "D102", "last_agent": "settlement"}, "performance", "follow-up switches topic to performance"),
     ("And his pay?", {"driver_id": "D104", "last_agent": "performance"}, "settlement", "follow-up switches topic to settlement"),
     ("Compare with D105", {"driver_id": "D102", "last_agent": "settlement"}, "settlement", "new driver, same topic"),
+   
     # --- Escrow ---
     ("What is D105's current escrow balance?", {}, "escrow", "escrow keyword"),
     ("Show D105's escrow withdrawals", {}, "escrow", "escrow keyword, not settlement"),
