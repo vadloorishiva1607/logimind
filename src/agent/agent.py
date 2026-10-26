@@ -8,6 +8,7 @@ from src.tools.escrow import run_escrow_agent
 from src.tools.rag import run_rag_agent
 from src.tools.performance import run_performance_agent
 from src.tools.shipment import run_shipment_agent
+from src.tools.fuel import run_fuel_agent
 
 # Rough keyword heuristic for "this sounds like a policy/SOP question,"
 # used only when no driver_id is present (a driver_id always wins -- it's
@@ -32,6 +33,7 @@ _PERFORMANCE_KEYWORDS =(
 
 _ESCROW_KEYWORDS = ("escrow",)
 _SHIPMENT_KEYWORDS = ("shipment",)
+_FUEL_KEYWORDS = ("fuel", "mpg", "gallon", "diesel")
 
 _SETTLEMENT_KEYWORDS = (
      "settlement", "pay", "deduction", "earning", "gross", "net pay",
@@ -43,7 +45,8 @@ _SETTLEMENT_KEYWORDS = (
 _DRIVER_AGENTS = {
     "settlement": run_settlement_agent,
     "performance": run_performance_agent,
-     "escrow": run_escrow_agent,
+    "escrow": run_escrow_agent,
+    "fuel": run_fuel_agent,
 }
 
 # Routes a follow-up question (no topic words) may stay with.
@@ -56,6 +59,9 @@ def _matched(question: str, keywords) -> bool:
 
 def _pick_driver_agent(question: str, last_agent) -> tuple[str, str]:
     """Return (route, reason). The reason says which rule fired."""
+    kw = _matched(question, _FUEL_KEYWORDS)
+    if kw:
+        return "fuel", f"matched fuel keyword '{kw}'"
     kw = _matched(question, _SHIPMENT_KEYWORDS)
     if kw:
         return "shipment", f"matched shipment keyword '{kw}'"
@@ -143,6 +149,9 @@ def performance_node(state: GraphState, db) -> GraphState:
 def escrow_node(state: GraphState, db) -> GraphState:
     return _driver_agent_node(state, db, "escrow")
 
+def fuel_node(state: GraphState, db) -> GraphState:
+   return _driver_agent_node(state, db, "fuel")
+
 def shipment_node(state: GraphState, db) -> GraphState:
     """Shipment questions need a shipment ID or a driver ID (either is enough)."""
     question = state["question"]
@@ -197,8 +206,7 @@ def clarify_node(state: GraphState) -> GraphState:
     # driver/topic was actually established for a future turn to recall).
     answer = (
         "I'm not sure how to help with that yet. If you're asking about a "
-        "driver's settlement, escrow or performance (safety score, "
-        "on-time rate, incidents), include a driver ID (e.g. D102). If you're asking about "
+        "driver's settlement, escrow, fuel or performance (safety score, "
         "on-time rate, incidents), include a driver ID (e.g. D102). For a "
         "shipment, include its ID (e.g. S10023). If you're asking about "
         "a company policy or SOP, try mentioning \"policy\" or \"procedure\" "
@@ -215,6 +223,7 @@ def build_graph(db, checkpointer=None):
     graph.add_node("performance_agent", lambda state: performance_node(state, db))
     graph.add_node("escrow_agent", lambda state: escrow_node(state, db))
     graph.add_node("shipment_agent", lambda state: shipment_node(state, db))
+    graph.add_node("fuel_agent", lambda state: fuel_node(state, db))
     graph.add_node("rag_agent", rag_node)
     graph.add_node("clarify", clarify_node)
 
@@ -232,6 +241,7 @@ def build_graph(db, checkpointer=None):
             "performance": "performance_agent",
             "escrow": "escrow_agent",
             "shipment": "shipment_agent",
+            "fuel": "fuel_agent",
             "rag": "rag_agent",
             "clarify": "clarify",
         },
@@ -240,7 +250,7 @@ def build_graph(db, checkpointer=None):
     graph.add_edge("performance_agent", END)
     graph.add_edge("escrow_agent", END)
     graph.add_edge("shipment_agent", END)
+    graph.add_edge("fuel_agent", END)
     graph.add_edge("rag_agent", END)
     graph.add_edge("clarify", END)
-
     return graph.compile(checkpointer=checkpointer)

@@ -264,6 +264,63 @@ def get_driver_shipments(driver_id: str, limit: int = 10) -> dict:
 
     return {"rows": rows}
 
+@mcp.tool()
+def get_fuel_history(driver_id: str, days: int = 42) -> dict:
+    """Return a driver's fuel transactions over a period (newest first),
+    plus fleet averages over the same period for comparison.
+
+    The period is the last `days` days up to the driver's most recent
+    fuel transaction (clamped to 1-365). Returns {"rows": [...],
+    "fleet": {...} or None}. Each row has transaction_date, gallons,
+    cost_usd, mpg, location. An empty "rows" list means no fuel history.
+    """
+    days = max(1, min(days, 365))
+
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            # The window ends at the driver's latest transaction, not today,
+            # so old demo data still returns results.
+            cur.execute(
+                "SELECT max(transaction_date) FROM fuel_transactions WHERE driver_id = %s",
+                (driver_id,),
+            )
+            latest = cur.fetchone()[0]
+            if latest is None:
+                return {"rows": [], "fleet": None}
+
+            cur.execute(
+                "SELECT transaction_date, gallons, cost_usd, mpg, location "
+                "FROM fuel_transactions WHERE driver_id = %s "
+                "AND transaction_date > %s::date - %s "
+                "ORDER BY transaction_date DESC, id DESC",
+                (driver_id, latest, days),
+            )
+            cols = [d.name for d in cur.description]
+            rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+
+            cur.execute(
+                "SELECT round(avg(mpg), 2), round(sum(cost_usd) / nullif(sum(gallons), 0), 3), "
+                "count(DISTINCT driver_id) FROM fuel_transactions "
+                "WHERE transaction_date > %s::date - %s AND transaction_date <= %s",
+                (latest, days, latest),
+            )
+            fleet_row = cur.fetchone()
+    finally:
+        conn.close()
+
+    for row in rows:
+        row["transaction_date"] = row["transaction_date"].isoformat()
+        for k in ("gallons", "cost_usd", "mpg"):
+            if row.get(k) is not None:
+                row[k] = float(row[k])
+
+    fleet = None
+    if fleet_row and fleet_row[0] is not None:
+        fleet = {"mpg": float(fleet_row[0]),
+                 "price_per_gallon": float(fleet_row[1]) if fleet_row[1] is not None else None,
+                 "drivers": fleet_row[2]}
+    return {"rows": rows, "fleet": fleet}
 
 if __name__ == "__main__":
     # stdio transport: the client launches this file as a child process
