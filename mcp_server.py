@@ -199,6 +199,71 @@ def _clean_escrow_row(row: dict) -> dict:
             row[k] = float(row[k])
     return row
 
+def _clean_shipment_row(row: dict) -> dict:
+    """Make one shipment row JSON-safe: timestamps -> ISO text."""
+    for k in ("scheduled_eta", "actual_eta"):
+        if row.get(k) is not None:
+            row[k] = row[k].isoformat()
+    return row
+
+
+_SHIPMENT_COLUMNS = (
+    "shipment_id, driver_id, origin, destination, scheduled_eta, "
+    "actual_eta, status, delay_reason"
+)
+
+
+@mcp.tool()
+def get_shipment(shipment_id: str) -> dict:
+    """Return ONE shipment by its ID (for example S10023): driver, origin,
+    destination, scheduled and actual ETA, status and delay reason.
+
+    Use this when the question names a specific shipment. Returns
+    {"shipment": None} if the shipment ID is not found (not an error).
+    """
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT {_SHIPMENT_COLUMNS} FROM shipments WHERE shipment_id = %s",
+                (shipment_id,),
+            )
+            row = cur.fetchone()
+            cols = [d.name for d in cur.description]
+    finally:
+        conn.close()
+
+    if row is None:
+        return {"shipment": None}
+    return {"shipment": _clean_shipment_row(dict(zip(cols, row)))}
+
+
+@mcp.tool()
+def get_driver_shipments(driver_id: str, limit: int = 10) -> dict:
+    """Return a driver's most recent shipments (latest scheduled ETA first).
+
+    Use this when the question is about a driver's shipments in general,
+    or to check whether delays are a repeated pattern for that driver.
+    `limit` is clamped to 1-50. Returns {"rows": [...]}; an empty list
+    means the driver has no shipments.
+    """
+    limit = max(1, min(limit, MAX_TRANSACTIONS))
+
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT {_SHIPMENT_COLUMNS} FROM shipments WHERE driver_id = %s "
+                "ORDER BY scheduled_eta DESC NULLS LAST LIMIT %s",
+                (driver_id, limit),
+            )
+            cols = [d.name for d in cur.description]
+            rows = [_clean_shipment_row(dict(zip(cols, r))) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+    return {"rows": rows}
+
 
 if __name__ == "__main__":
     # stdio transport: the client launches this file as a child process
