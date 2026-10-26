@@ -50,6 +50,13 @@ CASES = [
     ("When was it supposed to arrive?", {"shipment_id": "S10023", "last_agent": "shipment"}, "shipment", "follow-up about the remembered shipment"),
     ("Why did D102 settlement drop?", {"shipment_id": "S10023", "last_agent": "shipment"}, "settlement", "new driver question moves on from the shipment"),
 
+    # --- Fuel ---
+    ("Why did D102's fuel cost go up?", {}, "fuel", "fuel keyword"),
+    ("What is D104's MPG?", {}, "fuel", "mpg keyword"),
+    ("How many gallons did D102 buy last week?", {}, "fuel", "gallon keyword"),
+    ("Why did D102's fuel deduction rise?", {}, "fuel", "fuel wins over the settlement word 'deduction'"),
+    ("And the week before?", {"driver_id": "D102", "last_agent": "fuel"}, "fuel", "follow-up stays with fuel"),
+
     # --- Policy questions (RAG) ---
     ("What is the escrow policy?", {}, "rag", "policy keyword"),
     ("What is the driver termination procedure?", {}, "rag", "procedure keyword"),
@@ -61,7 +68,7 @@ CASES = [
     ("Hello", {}, "clarify", "greeting"),
     ("Why did it drop?", {}, "clarify", "no driver, no topic, no memory"),
     ("What are the shipment delay rules?", {}, "rag", "shipment word but no ID: a policy question"),
-    
+
     # --- Tricky wording the keyword rules may get wrong ---
     ("How's D104 driving lately?", {}, "performance", "no keyword: 'driving' means performance"),
     ("Is D102 being safe on the road?", {}, "performance", "'safe' is not 'safety'"),
