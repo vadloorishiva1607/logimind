@@ -239,6 +239,7 @@ def build_graph(db, checkpointer=None):
     graph.add_node("escrow_agent", lambda state: escrow_node(state, db))
     graph.add_node("shipment_agent", lambda state: shipment_node(state, db))
     graph.add_node("fuel_agent", lambda state: fuel_node(state, db))
+    graph.add_node("driver_agent", lambda state: driver_node(state, db))
     graph.add_node("rag_agent", rag_node)
     graph.add_node("clarify", clarify_node)
 
@@ -257,6 +258,7 @@ def build_graph(db, checkpointer=None):
             "escrow": "escrow_agent",
             "shipment": "shipment_agent",
             "fuel": "fuel_agent",
+            "driver": "driver_agent",
             "rag": "rag_agent",
             "clarify": "clarify",
         },
@@ -266,6 +268,7 @@ def build_graph(db, checkpointer=None):
     graph.add_edge("escrow_agent", END)
     graph.add_edge("shipment_agent", END)
     graph.add_edge("fuel_agent", END)
+    graph.add_edge("driver_agent", END)
     graph.add_edge("rag_agent", END)
     graph.add_edge("clarify", END)
     return graph.compile(checkpointer=checkpointer)
