@@ -206,8 +206,7 @@ def clarify_node(state: GraphState) -> GraphState:
     # driver/topic was actually established for a future turn to recall).
     answer = (
         "I'm not sure how to help with that yet. If you're asking about a "
-        "driver's settlement, escrow or performance (safety score, "
-        "on-time rate, incidents), include a driver ID (e.g. D102). If you're asking about "
+        "driver's settlement, escrow, fuel or performance (safety score, "
         "on-time rate, incidents), include a driver ID (e.g. D102). For a "
         "shipment, include its ID (e.g. S10023). If you're asking about "
         "a company policy or SOP, try mentioning \"policy\" or \"procedure\" "
