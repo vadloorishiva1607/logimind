@@ -42,7 +42,14 @@ CASES = [
     ("What is D105's current escrow balance?", {}, "escrow", "escrow keyword"),
     ("Show D105's escrow withdrawals", {}, "escrow", "escrow keyword, not settlement"),
     ("What about before that?", {"driver_id": "D105", "last_agent": "escrow"}, "escrow", "follow-up stays with escrow"),
-   
+
+   # --- Shipment ---
+    ("Why is shipment S10023 delayed?", {}, "shipment", "shipment ID"),
+    ("Where is S10023?", {}, "shipment", "shipment ID alone, no topic word"),
+    ("Is D102 often late with shipments?", {}, "shipment", "driver ID  shipment keyword"),
+    ("When was it supposed to arrive?", {"shipment_id": "S10023", "last_agent": "shipment"}, "shipment", "follow-up about the remembered shipment"),
+    ("Why did D102 settlement drop?", {"shipment_id": "S10023", "last_agent": "shipment"}, "settlement", "new driver question moves on from the shipment"),
+
     # --- Policy questions (RAG) ---
     ("What is the escrow policy?", {}, "rag", "policy keyword"),
     ("What is the driver termination procedure?", {}, "rag", "procedure keyword"),
@@ -53,6 +60,8 @@ CASES = [
     ("What is the weather today?", {}, "clarify", "off-topic"),
     ("Hello", {}, "clarify", "greeting"),
     ("Why did it drop?", {}, "clarify", "no driver, no topic, no memory"),
+    ("What are the shipment delay rules?", {}, "rag", "shipment word but no ID: a policy question"),
+    
     # --- Tricky wording the keyword rules may get wrong ---
     ("How's D104 driving lately?", {}, "performance", "no keyword: 'driving' means performance"),
     ("Is D102 being safe on the road?", {}, "performance", "'safe' is not 'safety'"),

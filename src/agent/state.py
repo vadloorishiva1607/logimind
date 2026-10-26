@@ -3,10 +3,14 @@ import re
 
 DRIVER_ID_RE = re.compile(r"\bD\d{3}\b")
 
+SHIPMENT_ID_RE = re.compile(r"\bS\d{5}\b")
+
 
 class GraphState(TypedDict, total=False):
     question: str
     driver_id: Optional[str]
+    # The shipment being discussed (e.g. "S10023"), kept for follow-ups.
+    shipment_id: Optional[str]
     # The asking user's role (dispatcher / finance / compliance / ...), used
     # by the RAG agent for role-filtered retrieval (Design Doc Section 12 --
     # RBAC is enforced by backend/tool logic, never by the LLM). There's no

@@ -1,12 +1,13 @@
 import logging
 from langgraph.graph import StateGraph, END
 
-from src.agent.state import GraphState, DRIVER_ID_RE
+from src.agent.state import GraphState, DRIVER_ID_RE, SHIPMENT_ID_RE
 from src.agent.guardrails import guardrail_node
 from src.tools.settlement import run_settlement_agent
 from src.tools.escrow import run_escrow_agent
 from src.tools.rag import run_rag_agent
 from src.tools.performance import run_performance_agent
+from src.tools.shipment import run_shipment_agent
 
 # Rough keyword heuristic for "this sounds like a policy/SOP question,"
 # used only when no driver_id is present (a driver_id always wins -- it's
@@ -30,10 +31,13 @@ _PERFORMANCE_KEYWORDS =(
 )
 
 _ESCROW_KEYWORDS = ("escrow",)
+_SHIPMENT_KEYWORDS = ("shipment",)
 
 _SETTLEMENT_KEYWORDS = (
      "settlement", "pay", "deduction", "earning", "gross", "net pay",
 )
+
+
 
 # Driver-data agents the Supervisor can route to: route name -> tool function.
 _DRIVER_AGENTS = {
@@ -42,6 +46,9 @@ _DRIVER_AGENTS = {
      "escrow": run_escrow_agent,
 }
 
+# Routes a follow-up question (no topic words) may stay with.
+_FOLLOW_UP_ROUTES = set(_DRIVER_AGENTS) | {"shipment"}
+
 def _matched(question: str, keywords) -> bool:
     """Return the first keyword found in the question, or None."""
     q = question.lower()
@@ -49,6 +56,9 @@ def _matched(question: str, keywords) -> bool:
 
 def _pick_driver_agent(question: str, last_agent) -> tuple[str, str]:
     """Return (route, reason). The reason says which rule fired."""
+    kw = _matched(question, _SHIPMENT_KEYWORDS)
+    if kw:
+        return "shipment", f"matched shipment keyword '{kw}'"
     kw = _matched(question, _PERFORMANCE_KEYWORDS)
     if kw:
         return "performance", f"matched performance keyword '{kw}'"
@@ -58,7 +68,7 @@ def _pick_driver_agent(question: str, last_agent) -> tuple[str, str]:
     kw = _matched(question, _SETTLEMENT_KEYWORDS)
     if kw:
         return "settlement", f"matched settlement keyword '{kw}'"
-    if last_agent in _DRIVER_AGENTS:
+    if last_agent in _FOLLOW_UP_ROUTES:
         return last_agent, f"no topic keyword; follow-up reused last_agent '{last_agent}'"
     return "settlement", "no topic keyword and no previous agent; defaulted to settlement"
 
@@ -66,12 +76,25 @@ def supervisor_node(state: GraphState) -> GraphState:
     question = state["question"]
     match = DRIVER_ID_RE.search(question)
     driver_id = match.group(0) if match else state.get("driver_id")
+    ship_match = SHIPMENT_ID_RE.search(question)
+    # A new shipment ID replaces the remembered one; a new driver ID (with
+    # no shipment ID) means the user moved on, so forget the old shipment.
+    if ship_match:
+        shipment_id = ship_match.group(0)
+    elif match:
+        shipment_id = None  
+    else:
+        shipment_id = state.get("shipment_id")      
     policy_kw = _matched(question, _POLICY_KEYWORDS)
 
-    if driver_id:
+    if ship_match:
+        route, reason = "shipment", f"shipment ID {shipment_id} in the question"
+    elif driver_id:    
         route, reason = _pick_driver_agent(question, state.get("last_agent"))
         if not match:
             reason += f" (driver {driver_id} taken from memory)"
+    elif shipment_id and state.get("last_agent") == "shipment":
+        route, reason = "shipment", f"follow-up about shipment {shipment_id} (from memory)"        
     elif policy_kw:
         route, reason = "rag", f"no driver ID; matched policy keyword '{policy_kw}'"
     else:
@@ -81,7 +104,7 @@ def supervisor_node(state: GraphState) -> GraphState:
         route = "clarify"
         reason = "no driver ID and no policy keyword"
     logger.info("Supervisor: route=%s driver=%s reason=%s", route, driver_id, reason)
-    return {**state, "driver_id": driver_id, "route": route, "route_reason": reason}
+    return {**state, "driver_id": driver_id, "shipment_id": shipment_id,  "route": route, "route_reason": reason}
 
 
 def _driver_agent_node(state: GraphState, db, agent_name: str) -> GraphState:
@@ -120,6 +143,33 @@ def performance_node(state: GraphState, db) -> GraphState:
 def escrow_node(state: GraphState, db) -> GraphState:
     return _driver_agent_node(state, db, "escrow")
 
+def shipment_node(state: GraphState, db) -> GraphState:
+    """Shipment questions need a shipment ID or a driver ID (either is enough)."""
+    question = state["question"]
+    shipment_id = state.get("shipment_id")
+    # Use the driver only when there is no shipment: the shipment's own
+    # record says which driver it belongs to.
+    driver_id = None if shipment_id else state.get("driver_id")
+
+    if not shipment_id and not driver_id:
+        answer = ("I need a shipment ID (e.g. S10023) or a driver ID (e.g. D102) "
+                  "to look up shipments.")
+    else:
+        answer = run_shipment_agent(db, question, shipment_id=shipment_id, driver_id=driver_id)
+
+    subject = shipment_id or driver_id or "unknown shipment"
+    prior_summary = state.get("memory_summary", "")
+    new_line = f"Asked about {subject} (shipment): \"{question}\""
+    memory_summary = (prior_summary + "\n" + new_line).strip() if prior_summary else new_line
+
+    return {
+        **state,
+        "answer": answer,
+        "agents_used": state.get("agents_used", []) + ["shipment"],
+        "last_agent": "shipment",
+        "memory_summary": memory_summary,
+    }
+
 def rag_node(state: GraphState) -> GraphState:
     question = state["question"]
     # Default to the lowest-privilege role if the caller didn't send one,
@@ -146,11 +196,13 @@ def clarify_node(state: GraphState) -> GraphState:
     # append to agents_used (no agent actually ran) or memory_summary (no
     # driver/topic was actually established for a future turn to recall).
     answer = (
-         "I'm not sure how to help with that yet. If you're asking about a "
-         "driver's settlement, escrow or performance (safety score, "
-          "on-time rate, incidents), include a driver ID (e.g. D102). If you're asking about "
-         "a company policy or SOP, try mentioning \"policy\" or \"procedure\" "
-         "so I know to search our documents."
+        "I'm not sure how to help with that yet. If you're asking about a "
+        "driver's settlement, escrow or performance (safety score, "
+        "on-time rate, incidents), include a driver ID (e.g. D102). If you're asking about "
+        "on-time rate, incidents), include a driver ID (e.g. D102). For a "
+        "shipment, include its ID (e.g. S10023). If you're asking about "
+        "a company policy or SOP, try mentioning \"policy\" or \"procedure\" "
+        "so I know to search our documents."
     )
     return {**state, "answer": answer, "agents_used": state.get("agents_used", [])}
 
@@ -162,6 +214,7 @@ def build_graph(db, checkpointer=None):
     graph.add_node("settlement_agent", lambda state: settlement_node(state, db))
     graph.add_node("performance_agent", lambda state: performance_node(state, db))
     graph.add_node("escrow_agent", lambda state: escrow_node(state, db))
+    graph.add_node("shipment_agent", lambda state: shipment_node(state, db))
     graph.add_node("rag_agent", rag_node)
     graph.add_node("clarify", clarify_node)
 
@@ -178,6 +231,7 @@ def build_graph(db, checkpointer=None):
             "settlement": "settlement_agent",
             "performance": "performance_agent",
             "escrow": "escrow_agent",
+            "shipment": "shipment_agent",
             "rag": "rag_agent",
             "clarify": "clarify",
         },
@@ -185,6 +239,7 @@ def build_graph(db, checkpointer=None):
     graph.add_edge("settlement_agent", END)
     graph.add_edge("performance_agent", END)
     graph.add_edge("escrow_agent", END)
+    graph.add_edge("shipment_agent", END)
     graph.add_edge("rag_agent", END)
     graph.add_edge("clarify", END)
 
