@@ -43,6 +43,15 @@ CASES = [
     ("Show D105's escrow withdrawals", {}, "escrow", "escrow keyword, not settlement"),
     ("What about before that?", {"driver_id": "D105", "last_agent": "escrow"}, "escrow", "follow-up stays with escrow"),
 
+    # --- Driver ---
+    ("Tell me about D103", {}, "driver", "driver keyword 'tell me about'"),
+    ("What is D103's status?", {}, "driver", "status keyword"),
+    ("Is D103 still onboarding?", {}, "driver", "onboard keyword"),
+    ("Give me an overview of D102", {}, "driver", "overview keyword"),
+    ("What is D102's pay status?", {}, "settlement", "pay wins over status"),
+    ("And her onboarding date?", {"driver_id": "D103", "last_agent": "driver"}, "driver", "follow-up stays with driver"),
+
+
    # --- Shipment ---
     ("Why is shipment S10023 delayed?", {}, "shipment", "shipment ID"),
     ("Where is S10023?", {}, "shipment", "shipment ID alone, no topic word"),

@@ -9,6 +9,7 @@ from src.tools.rag import run_rag_agent
 from src.tools.performance import run_performance_agent
 from src.tools.shipment import run_shipment_agent
 from src.tools.fuel import run_fuel_agent
+from src.tools.driver import run_driver_agent
 
 # Rough keyword heuristic for "this sounds like a policy/SOP question,"
 # used only when no driver_id is present (a driver_id always wins -- it's
@@ -34,6 +35,7 @@ _PERFORMANCE_KEYWORDS =(
 _ESCROW_KEYWORDS = ("escrow",)
 _SHIPMENT_KEYWORDS = ("shipment",)
 _FUEL_KEYWORDS = ("fuel", "mpg", "gallon", "diesel")
+_DRIVER_KEYWORDS = ("profile", "status", "onboard", "tell me about", "who is", "overview", "summary")
 
 _SETTLEMENT_KEYWORDS = (
      "settlement", "pay", "deduction", "earning", "gross", "net pay",
@@ -47,11 +49,14 @@ _DRIVER_AGENTS = {
     "performance": run_performance_agent,
     "escrow": run_escrow_agent,
     "fuel": run_fuel_agent,
+     "driver": run_driver_agent,
 }
 
 # Routes a follow-up question (no topic words) may stay with.
 _FOLLOW_UP_ROUTES = set(_DRIVER_AGENTS) | {"shipment"}
 
+# Agents that also need the user's role (to hide fields the role may not see).
+_ROLE_AWARE_AGENTS = {"driver"}
 def _matched(question: str, keywords) -> bool:
     """Return the first keyword found in the question, or None."""
     q = question.lower()
@@ -74,6 +79,9 @@ def _pick_driver_agent(question: str, last_agent) -> tuple[str, str]:
     kw = _matched(question, _SETTLEMENT_KEYWORDS)
     if kw:
         return "settlement", f"matched settlement keyword '{kw}'"
+    kw = _matched(question, _DRIVER_KEYWORDS)
+    if kw:
+        return "driver", f"matched driver keyword '{kw}'"
     if last_agent in _FOLLOW_UP_ROUTES:
         return last_agent, f"no topic keyword; follow-up reused last_agent '{last_agent}'"
     return "settlement", "no topic keyword and no previous agent; defaulted to settlement"
@@ -124,7 +132,11 @@ def _driver_agent_node(state: GraphState, db, agent_name: str) -> GraphState:
             "Could you confirm which driver you're asking about?"
         )
     else:
-        answer = _DRIVER_AGENTS[agent_name](db, driver_id, question)
+        agent = _DRIVER_AGENTS[agent_name]
+        if agent_name in _ROLE_AWARE_AGENTS:
+            answer = agent(db, driver_id, question, role=state.get("role"))
+        else:
+            answer = agent(db, driver_id, question)    
 
     agents_used = state.get("agents_used",[])+[agent_name]
 
@@ -151,6 +163,9 @@ def escrow_node(state: GraphState, db) -> GraphState:
 
 def fuel_node(state: GraphState, db) -> GraphState:
    return _driver_agent_node(state, db, "fuel")
+
+def driver_node(state: GraphState, db) -> GraphState:
+    return _driver_agent_node(state, db, "driver")
 
 def shipment_node(state: GraphState, db) -> GraphState:
     """Shipment questions need a shipment ID or a driver ID (either is enough)."""
