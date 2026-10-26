@@ -322,6 +322,68 @@ def get_fuel_history(driver_id: str, days: int = 42) -> dict:
                  "drivers": fleet_row[2]}
     return {"rows": rows, "fleet": fleet}
 
+@mcp.tool()
+def get_driver_overview(driver_id: str) -> dict:
+    """Return a driver's profile (name, status, onboarding date, role) and a
+    one-line snapshot from each data area: latest settlement, latest
+    performance period, current escrow balance, and shipment counts.
+
+    Returns {"driver": None, "snapshot": None} if the driver ID is not found.
+    """
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT driver_id, full_name, status, onboarding_date, role "
+                "FROM drivers WHERE driver_id = %s",
+                (driver_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return {"driver": None, "snapshot": None}
+            driver = dict(zip([d.name for d in cur.description], row))
+
+            cur.execute(
+                "SELECT week_ending, net_pay FROM settlements WHERE driver_id = %s "
+                "ORDER BY week_ending DESC LIMIT 1", (driver_id,))
+            settlement = cur.fetchone()
+
+            cur.execute(
+                "SELECT period_end, safety_score, on_time_pct FROM performance "
+                "WHERE driver_id = %s ORDER BY period_end DESC LIMIT 1", (driver_id,))
+            performance = cur.fetchone()
+
+            cur.execute(
+                "SELECT transaction_date, balance_after FROM escrow_transactions "
+                "WHERE driver_id = %s ORDER BY transaction_date DESC, id DESC LIMIT 1",
+                (driver_id,))
+            escrow = cur.fetchone()
+
+            cur.execute(
+                "SELECT count(*), count(*) FILTER (WHERE status = 'delayed') "
+                "FROM shipments WHERE driver_id = %s", (driver_id,))
+            shipments = cur.fetchone()
+    finally:
+        conn.close()
+
+    if driver.get("onboarding_date") is not None:
+        driver["onboarding_date"] = driver["onboarding_date"].isoformat()
+
+    def num(x):
+        return None if x is None else float(x)
+
+    snapshot = {
+        "settlement": None if settlement is None else
+            {"week_ending": settlement[0].isoformat(), "net_pay": num(settlement[1])},
+        "performance": None if performance is None else
+            {"period_end": performance[0].isoformat(), "safety_score": num(performance[1]),
+             "on_time_pct": num(performance[2])},
+        "escrow": None if escrow is None else
+            {"as_of": escrow[0].isoformat(), "balance": num(escrow[1])},
+        "shipments": {"total": shipments[0], "delayed": shipments[1]},
+    }
+    return {"driver": driver, "snapshot": snapshot}
+
 if __name__ == "__main__":
     # stdio transport: the client launches this file as a child process
     # and talks to it over stdin/stdout -- no network port to open or
