@@ -95,8 +95,9 @@ def record_flags(driver: dict, snapshot: dict, as_of: date) -> list[tuple[str, s
                 "(usually a missing document or a scheduling delay)."))
         if snapshot.get("settlement") or snapshot.get("performance"):
             flags.append(("status_outdated",
-                "Status may be out of date: marked 'onboarding' but already has pay or "
-                "performance records. Suggest checking the driver record."))
+                 "Status may be out of date: marked 'onboarding', yet work records for this "
+                "driver already exist in the system, so onboarding may already be complete. "
+                "Suggest checking the driver record."))
     elif driver["status"] == "suspended":
         flags.append(("suspended", "Driver is suspended: figures are shown for reference only."))
     return flags
