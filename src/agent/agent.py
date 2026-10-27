@@ -1,4 +1,6 @@
 import logging
+import re
+
 from langgraph.graph import StateGraph, END
 
 from src.agent.state import GraphState, DRIVER_ID_RE, SHIPMENT_ID_RE
@@ -24,6 +26,15 @@ _POLICY_KEYWORDS = (
 )
 
 logger = logging.getLogger(__name__)
+
+# Greetings and small talk carry no question. Without this check, "Hello" in a
+# conversation that remembers a driver is treated as a follow-up and answered
+# with that driver's data (issue 44). Matches only when the WHOLE message is a
+# greeting, so "Hello, why did D102 settlement drop?" still routes normally.
+_SMALL_TALK_RE = re.compile(
+    r"^\s*(hi|hello|hey|thanks|thank you|ok|okay|good (morning|afternoon|evening))\b[\s!.,?]*$",
+    re.IGNORECASE,
+)
 
 # Which driver-data agent a driver question is about. Checked in this order;
 # if neither matches, the conversation's previous agent is reused (follow-ups),
@@ -101,7 +112,9 @@ def supervisor_node(state: GraphState) -> GraphState:
         shipment_id = state.get("shipment_id")      
     policy_kw = _matched(question, _POLICY_KEYWORDS)
 
-    if ship_match:
+    if _SMALL_TALK_RE.match(question):
+        route, reason = "clarify", "greeting or small talk, no question to answer"
+    elif ship_match:
         route, reason = "shipment", f"shipment ID {shipment_id} in the question"
     elif policy_kw and not match:
         route, reason = "rag", f"matched policy keyword '{policy_kw}' and no driver ID typed"    
