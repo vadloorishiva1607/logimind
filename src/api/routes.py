@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -9,6 +10,18 @@ from src.tools.rag import get_chroma_collection
 from src.api.schemas import ChatRequest
 
 app = FastAPI(title="LogiMind")
+
+# Let the Angular UI call this API from a browser. Browsers block calls to a
+# different address (origin) unless the API lists that origin here.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:4200",                 # Angular dev server (ng serve)
+        # "https://<your-project>.vercel.app",   # add after the Vercel deploy
+    ],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "ngrok-skip-browser-warning"],
+)
 
 
 @app.on_event("startup")
