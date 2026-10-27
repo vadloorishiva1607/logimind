@@ -17,7 +17,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:4200",                 # Angular dev server (ng serve)
-        # "https://<your-project>.vercel.app",   # add after the Vercel deploy
+        "https://logimind-blush.vercel.app/",   # # the deployed UI
     ],
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type", "ngrok-skip-browser-warning"],
