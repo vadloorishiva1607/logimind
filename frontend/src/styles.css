@@ -1,0 +1,2 @@
+/* Global styles: remove the browser's default page margin. */
+html, body { margin: 0; height: 100%; }
