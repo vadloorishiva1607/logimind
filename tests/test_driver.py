@@ -58,6 +58,16 @@ def run():
                    any("254 days" in text for _, text in facts3["flags"])))
     r.append(check("D103: onboarding but already paid -> 'status may be out of date'",
                    any(kind == "status_outdated" for kind, _ in facts3["flags"])))
+    def onboarding(days_before_sep27):
+        from datetime import date, timedelta
+        start = (date(2026, 9, 27) - timedelta(days=days_before_sep27)).isoformat()
+        return ({**D103[0], "onboarding_date": start}, {**D103[1], "settlement": None, "performance": None})
+    _, f40 = build_driver_context(*onboarding(40), "finance")
+    r.append(check("40 days onboarding: past the expected 30, but not flagged (SOP flags after 45)",
+                   not any(k == "onboarding_long" for k, _ in f40["flags"])))
+    _, f50 = build_driver_context(*onboarding(50), "finance")
+    r.append(check("50 days onboarding: flagged for Driver Manager follow-up (SOP: over 45)",
+                   any(k == "onboarding_long" and "Driver Manager" in t for k, t in f50["flags"])))
     _, facts_s = build_driver_context(*SUSPENDED, "finance")
     r.append(check("suspended driver flagged", any(kind == "suspended" for kind, _ in facts_s["flags"])))
     ctx_s, _ = build_driver_context(*SUSPENDED, "finance")
