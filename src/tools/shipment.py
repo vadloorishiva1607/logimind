@@ -10,22 +10,26 @@ the driver's delays are a repeated pattern, and the risk level. The LLM
 only explains. The output guardrail checks the numbers, and a safety net
 guarantees the risk level and any "cause unconfirmed" reach the user.
 
-Design Doc, Shipment/Risk agent negative scenarios:
-  - no delay reason recorded  -> "cause unconfirmed", never a guessed cause
-  - several causes recorded   -> list them all, don't pick one
+Rules follow the Shipment Delay Risk SOP (aligned 2026-10-26):
+  - "delayed" = actual ETA more than 60 minutes after the scheduled ETA
+  - a single delay with a known, documented cause is routine: no escalation
+  - 3 or more delays for the same driver within 2 weeks: escalate as a
+    systemic risk (the SOP also covers the same route; route data is not
+    fetched yet, so only the driver pattern is checked)
+  - no recorded reason: flag "cause unconfirmed", never guess a cause
+  - several causes recorded: list them all, don't pick one
 """
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from src.agent.output_guardrail import check_answer
 from src.models.llm_client import get_llm
 from src.tools.shipment_mcp_client import get_shipment_data_via_mcp
 
-# Risk rules. These thresholds are demo assumptions, stated openly in the
-# context so the answer can explain them; a real fleet would set its own.
-HIGH_DELAY_HOURS = 4.0      # a delay this long or longer is high risk
-MIN_HISTORY = 3             # fewer shipments than this: too few to call a pattern
-PATTERN_SHARE = 0.5         # half or more of recent shipments delayed = pattern
+# Shipment Delay Risk SOP thresholds.
+DELAY_MINUTES = 60      # more than this late = "delayed"
+PATTERN_COUNT = 3       # this many delays ...
+PATTERN_DAYS = 14       # ... within this many days = systemic risk, escalate
 
 SHIPMENT_SYSTEM_PROMPT = """You are LogiMind's Shipment and Risk agent. \
 Answer using ONLY the shipment data provided below, and quote specific \
@@ -39,7 +43,8 @@ times, the delay in hours, and the status.
 3. List every recorded cause of the delay. If there is more than one, say \
 the data does not show which contributed more. If the cause is \
 unconfirmed, say so and do not guess one.
-4. State the risk level and the reason given for it.
+4. State the escalation level and the reason given for it, naming the \
+Shipment Delay Risk SOP.
 5. Describe the driver's shipment history and whether it shows a repeated \
 pattern, using the pattern finding exactly as given.
 6. You may suggest a next step for a dispatcher, but never state that any \
@@ -63,8 +68,12 @@ def delay_hours(s: dict):
 
 
 def is_delayed(s: dict) -> bool:
+    """SOP: delayed = more than 60 minutes late. Uses the times when both are
+    recorded, otherwise the status."""
     hours = delay_hours(s)
-    return s.get("status") == "delayed" or (hours is not None and hours > 0)
+    if hours is not None:
+        return hours * 60 > DELAY_MINUTES
+    return s.get("status") == "delayed"
 
 
 def causes(reason):
@@ -76,32 +85,38 @@ def causes(reason):
 
 
 def pattern_finding(rows: list[dict]):
-    """Return (is_pattern, sentence) about the driver's recent shipments."""
-    total = len(rows)
-    delayed = sum(is_delayed(r) for r in rows)
-    if total < MIN_HISTORY:
-        return False, (f"{delayed} of {total} recent shipments delayed. Only {total} "
-                       f"shipment(s) on record: too few to call a pattern "
-                       f"(at least {MIN_HISTORY} are needed).")
-    if delayed >= 2 and delayed / total >= PATTERN_SHARE:
-        return True, f"Repeated pattern: {delayed} of {total} recent shipments delayed."
-    return False, f"No repeated pattern: {delayed} of {total} recent shipments delayed."
+    """SOP: 3 or more delays for the same driver within 2 weeks is a systemic
+    risk. Counts delays in the 14 days up to the driver's latest shipment.
+    Returns (is_pattern, sentence)."""
+    dated = [r for r in rows if r.get("scheduled_eta")]
+    if not dated:
+        return False, "No dated shipments to check for a pattern."
+    end = max(datetime.fromisoformat(r["scheduled_eta"]) for r in dated)
+    start = end - timedelta(days=PATTERN_DAYS)
+    recent = [r for r in dated if datetime.fromisoformat(r["scheduled_eta"]) > start]
+    delayed = sum(is_delayed(r) for r in recent)
+    window = f"the {PATTERN_DAYS} days up to {end.strftime('%Y-%m-%d')}"
+    if delayed >= PATTERN_COUNT:
+        return True, (f"Systemic risk: {delayed} delays for this driver in {window} "
+                      f"(the SOP escalates {PATTERN_COUNT} or more within 2 weeks).")
+    return False, (f"{delayed} delay(s) for this driver in {window}, below the SOP's "
+                   f"{PATTERN_COUNT}-delay pattern threshold. (Route patterns are not checked.)")
 
 
 def assess_risk(shipment, rows: list[dict], is_pattern: bool):
-    """Return (level, reason). Code decides the risk level, not the LLM."""
+    """Return (level, reason) under the Shipment Delay Risk SOP. Code decides, not the LLM."""
     if is_pattern:
-        return "HIGH", "the driver's delays are a repeated pattern"
-    if shipment is None:  # a question about the driver, not one shipment
-        if any(is_delayed(r) for r in rows):
-            return "MEDIUM", "the driver has delayed shipments, but not a repeated pattern"
-        return "LOW", "none of the driver's recent shipments were delayed"
-    hours = delay_hours(shipment)
-    if hours is not None and hours >= HIGH_DELAY_HOURS:
-        return "HIGH", f"a delay of {hours} hours is at or above the {HIGH_DELAY_HOURS:g}-hour threshold"
-    if is_delayed(shipment):
-        return "MEDIUM", f"the shipment is delayed, below the {HIGH_DELAY_HOURS:g}-hour threshold"
-    return "LOW", "the shipment is on time"
+        return "ESCALATE", ("the driver has 3 or more delays within 2 weeks, which the "
+                            "Shipment Delay Risk SOP treats as a systemic risk")
+    targets = [shipment] if shipment else rows
+    delayed = [s for s in targets if is_delayed(s)]
+    if any(not s.get("delay_reason") for s in delayed):
+        return "CAUSE UNCONFIRMED", ("a delay has no recorded reason; the SOP says to flag it "
+                                     "as 'cause unconfirmed' rather than guess a cause")
+    if delayed:
+        return "ROUTINE", ("a delay with a known, documented cause and no repeated pattern is "
+                           "routine and needs no escalation under the Shipment Delay Risk SOP")
+    return "ROUTINE", "no delay over the SOP's 60-minute rule"
 
 
 def _describe(s: dict) -> str:
@@ -141,7 +156,7 @@ def build_shipment_context(data: dict):
 
     driver = shipment["driver_id"] if shipment else (rows[0]["driver_id"] if rows else "unknown")
     lines += [
-        f"Risk level: {level}, because {why}.",
+        f"Escalation level (Shipment Delay Risk SOP): {level}, because {why}.",
         "",
         f"DRIVER {driver} SHIPMENT HISTORY: {pattern_sentence}",
     ]
@@ -157,8 +172,9 @@ def _ensure_reported(answer: str, facts: dict) -> str:
     user, even if the LLM left them out."""
     text = answer.lower()
     notes = []
-    if "risk" not in text or not re.search(rf"\b{facts['risk'].lower()}\b", text):
-        notes.append(f"Risk level (set by rules): {facts['risk']}, because {facts['risk_reason']}.")
+    if facts["risk"].lower() not in text:
+        notes.append(f"Escalation level (Shipment Delay Risk SOP): {facts['risk']}, "
+                     f"because {facts['risk_reason']}.")
     for sid in facts["unconfirmed"]:
         if "unconfirmed" not in text:
             notes.append(f"Cause unconfirmed for {sid}: no delay reason was recorded.")

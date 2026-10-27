@@ -35,8 +35,11 @@ _MOST_RESTRICTED = "dispatcher"
 _AREA_NAMES = {"settlement": "latest pay", "performance": "latest safety and on-time scores",
                "escrow": "escrow balance", "shipments": "shipment counts"}
 
-# Record rule. A demo assumption, stated openly in the context.
-ONBOARDING_EXPECTED_DAYS = 90
+# Driver Onboarding SOP: "Onboarding is expected to complete within 30 days
+# of the start date. Drivers exceeding 45 days in onboarding status should be
+# flagged for Driver Manager follow-up".
+ONBOARDING_EXPECTED_DAYS = 30
+ONBOARDING_FLAG_DAYS = 45
 
 DRIVER_SYSTEM_PROMPT = """You are LogiMind's Driver agent. Answer using \
 ONLY the driver data provided below, and quote specific figures and dates \
@@ -83,10 +86,13 @@ def record_flags(driver: dict, snapshot: dict, as_of: date) -> list[tuple[str, s
         days = (as_of - date.fromisoformat(driver["onboarding_date"])).days
 
     if driver["status"] == "onboarding":
-        if days is not None and days > ONBOARDING_EXPECTED_DAYS:
+        if days is not None and days > ONBOARDING_FLAG_DAYS:
             flags.append(("onboarding_long",
-                f"Onboarding taking longer than expected: still 'onboarding' {days} days "
-                f"after {driver['onboarding_date']} (expected within {ONBOARDING_EXPECTED_DAYS} days)."))
+                f"Onboarding taking longer than expected: still 'onboarding' {days} days after "
+                f"{driver['onboarding_date']}. Per the Driver Onboarding SOP, onboarding should "
+                f"complete within {ONBOARDING_EXPECTED_DAYS} days, and drivers past "
+                f"{ONBOARDING_FLAG_DAYS} days are flagged for Driver Manager follow-up "
+                "(usually a missing document or a scheduling delay)."))
         if snapshot.get("settlement") or snapshot.get("performance"):
             flags.append(("status_outdated",
                 "Status may be out of date: marked 'onboarding' but already has pay or "

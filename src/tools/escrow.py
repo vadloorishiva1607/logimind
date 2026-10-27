@@ -7,12 +7,26 @@ chooses between two tools (current balance, or transaction history).
 
 Code reconciles the balance: each balance change must equal the
 transaction amount. A gap is flagged as an "unexplained discrepancy"
-(Design Doc, Escrow Agent negative scenario). The LLM only explains, and
-the output guardrail checks every figure in its answer.
+(Design Doc, Escrow Agent negative scenario). Code also applies the
+Escrow Withdrawal Policy: documented reasons for withdrawals, the 25%
+large-change rule, and the $150 weekly contribution limit. The LLM only
+explains, and the output guardrail checks every figure in its answer.
 """
 from src.agent.output_guardrail import check_answer
 from src.models.llm_client import get_llm
 from src.tools.escrow_mcp_client import get_escrow_data_via_mcp
+
+# Escrow Withdrawal and Adjustment Policy rules.
+LARGE_CHANGE_SHARE = 0.25     # "Any escrow balance change exceeding 25 percent of the
+                              #  account's average balance in a single transaction must
+                              #  be logged with a specific reason code."
+MAX_WEEKLY_CONTRIBUTION = 150  # "may not exceed $150 without written driver consent on file"
+# "Escrow withdrawals require one of the following documented reasons: an approved
+# damage claim, an unpaid toll or citation ..., equipment replacement cost, or a
+# driver-requested early release approved by Finance."
+DOCUMENTED_REASONS = ("damage claim", "toll", "citation", "equipment", "early release")
+DOCUMENTED_REASONS_TEXT = ("an approved damage claim, an unpaid toll or citation, equipment "
+                           "replacement, or a Finance-approved early release")
 
 ESCROW_SYSTEM_PROMPT = """You are LogiMind's Escrow agent. Answer using \
 ONLY the escrow data provided below, and quote specific dates and dollar \
@@ -25,11 +39,12 @@ of the latest transaction.
 3. For a question about why the balance changed, explain the most recent \
 change in plain sentences: the balance before and after, and the \
 transaction that caused it, with its reason.
-4. If the data lists an unexplained discrepancy, state it plainly with its \
-amount, say it needs review by Finance, and do not guess its cause.
+4. If the data lists an unexplained discrepancy or a policy check, state \
+each one plainly with its figures, name the Escrow Withdrawal Policy, say \
+it needs review by Finance, and do not guess its cause.
 5. You cannot change escrow. If asked, say a Finance user must do it in \
 the existing application.
-6.If the data is insufficient to answer, say so instead of guessing.
+6. If the data is insufficient to answer, say so instead of guessing.
 7. Write the answer in your own plain sentences. Do not copy the data \
 lines or their labels."""
 
@@ -71,6 +86,34 @@ def reconcile(rows: list[dict]) -> list[dict]:
     return problems
 
 
+def policy_checks(rows: list[dict]) -> list[tuple[str, str]]:
+    """Apply the Escrow Withdrawal Policy to the history. Returns (kind, sentence) pairs."""
+    checks = []
+    balances = [r["balance_after"] for r in rows if r.get("balance_after") is not None]
+    avg_balance = round(sum(balances) / len(balances), 2) if balances else None
+    for r in rows:
+        amount, reason = r.get("amount_usd"), (r.get("reason") or "")
+        if amount is None:
+            continue
+        if amount < 0 and not any(w in reason.lower() for w in DOCUMENTED_REASONS):
+            checks.append(("undocumented",
+                f"Withdrawal without a documented reason: {_signed(amount)} on {r['transaction_date']} "
+                f"has the reason \"{reason or 'none'}\", which is not one of the policy's documented "
+                f"reasons ({DOCUMENTED_REASONS_TEXT}). The Escrow Withdrawal Policy says to flag it as an "
+                f"unexplained discrepancy for Finance review."))
+        if avg_balance and abs(amount) > LARGE_CHANGE_SHARE * avg_balance:
+            share = round(abs(amount) / avg_balance * 100, 1)
+            checks.append(("large",
+                f"Large change: {_signed(amount)} on {r['transaction_date']} is {share}% of the account's "
+                f"average balance of {_money(avg_balance)}. The policy requires a specific reason code for "
+                f"any single change over {LARGE_CHANGE_SHARE * 100:g}%."))
+        if amount > MAX_WEEKLY_CONTRIBUTION and r.get("type") == "deposit":
+            checks.append(("contribution",
+                f"Contribution over the limit: {_signed(amount)} on {r['transaction_date']} is more than "
+                f"{_money(MAX_WEEKLY_CONTRIBUTION)}; the policy requires written driver consent on file."))
+    return checks
+
+
 def build_escrow_context(tool: str, data: dict) -> str:
     """Turn the MCP tool's output into plain facts for the prompt."""
     if tool == "get_escrow_balance":
@@ -109,6 +152,10 @@ def build_escrow_context(tool: str, data: dict) -> str:
     else:
         lines.append("- All balance changes match their transactions.")
 
+    checks = policy_checks(rows)
+    lines += ["", "POLICY CHECKS (Escrow Withdrawal Policy):"]
+    lines += [f"- {text}" for _, text in checks] if checks else ["- None."]
+
     lines += ["", "ALL TRANSACTIONS (newest first):"]
     lines += [f"- {_describe(t)}" for t in rows]
     return "\n".join(lines)
@@ -141,18 +188,30 @@ def run_escrow_agent(db, driver_id: str, question: str = "") -> str:
     answer = check_answer(answer, context, "escrow")
     return _ensure_discrepancy_reported(answer, tool, data)
 
+
+# Words that show the answer reported each kind of policy check.
+_CHECK_WORDS = {
+    "undocumented": ("documented reason", "not one of", "no documented"),
+    "large": ("reason code", "25%", "25 percent"),
+    "contribution": ("consent",),
+}
+
+
 def _ensure_discrepancy_reported(answer: str, tool: str, data: dict) -> str:
-    """Safety net: a discrepancy found by code must reach the user, even if
-    the LLM left it out. Code adds it rather than trusting the LLM to."""
+    """Safety net: a discrepancy or policy check found by code must reach the
+    user, even if the LLM left it out. Code adds it rather than trusting the LLM to."""
     if tool != "get_escrow_history":
         return answer
+    text = answer.lower()
+    notes = []
     problems = reconcile(data["rows"])
-    if not problems or "discrepanc" in answer.lower():
-        return answer
-    notes = "; ".join(
-        f"{p['date']}: recorded balance {_money(p['recorded'])}, expected "
-        f"{_money(p['expected'])}, difference {_signed(p['difference'])}"
-        for p in problems
-    )
-    return (f"{answer}\n\nUnexplained discrepancy found by reconciliation "
-            f"(needs review by Finance): {notes}.")
+    if problems and "discrepanc" not in text:
+        details = "; ".join(
+            f"{p['date']}: recorded balance {_money(p['recorded'])}, expected "
+            f"{_money(p['expected'])}, difference {_signed(p['difference'])}"
+            for p in problems
+        )
+        notes.append(f"Unexplained discrepancy found by reconciliation (needs review by Finance): {details}.")
+    notes += [msg for kind, msg in policy_checks(data["rows"])
+              if not any(w in text for w in _CHECK_WORDS[kind])]
+    return answer if not notes else answer + "\n\nFlagged by rules: " + " ".join(notes)

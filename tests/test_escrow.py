@@ -7,7 +7,7 @@ no LLM, no database, no MCP call.
 Run from the repo root:
     PYTHONPATH=. python tests/test_escrow.py
 """
-from src.tools.escrow import build_escrow_context, reconcile
+from src.tools.escrow import _ensure_discrepancy_reported, build_escrow_context, policy_checks, reconcile
 
 D105_HISTORY = {"rows": [
     {"transaction_date": "2026-09-27", "type": "withdrawal", "amount_usd": -994.69, "balance_after": 1492.03, "reason": "Adjustment — see settlement deduction detail"},
@@ -55,6 +55,33 @@ def run():
     balance_ctx = build_escrow_context("get_escrow_balance", D105_BALANCE)
     results.append(check("balance context gives $1,492.03 and the latest withdrawal",
                          "CURRENT BALANCE: $1,492.03" in balance_ctx and "-$994.69" in balance_ctx))
+
+    # --- Escrow Withdrawal Policy checks ---
+    checks = policy_checks(rows)
+    kinds = [k for k, _ in checks]
+    r = results
+    r.append(check("D105 Sep 27 withdrawal: 'Adjustment' is not a documented reason -> flagged",
+                   kinds.count("undocumented") == 1 and "2026-09-27" in checks[kinds.index("undocumented")][1]))
+    r.append(check("D105 Sep 27 withdrawal is 47.1% of the $2,113.30 average balance (> 25%) -> flagged",
+                   any(k == "large" and "47.1%" in t and "$2,113.30" in t for k, t in checks)))
+    r.append(check("D105 weekly deposits ($67-$92) are under the $150 limit -> no contribution flag",
+                   "contribution" not in kinds))
+    documented = [{**rows[0], "reason": "Approved damage claim #4411"}] + rows[1:]
+    r.append(check("a withdrawal for an approved damage claim is not flagged as undocumented",
+                   "undocumented" not in [k for k, _ in policy_checks(documented)]))
+    big_deposit = [{**rows[1], "amount_usd": 160.0}] + rows[2:]
+    r.append(check("a $160 weekly contribution -> consent check",
+                   "contribution" in [k for k, _ in policy_checks(big_deposit)]))
+    r.append(check("history context lists the policy checks",
+                   "POLICY CHECKS (Escrow Withdrawal Policy)" in history_ctx and "documented reason" in history_ctx))
+    added = _ensure_discrepancy_reported("The balance dropped.", "get_escrow_history", D105_HISTORY)
+    r.append(check("safety net adds the discrepancy and both policy checks when missing",
+                   "Unexplained discrepancy" in added and "Withdrawal without a documented reason" in added
+                   and "Large change" in added))
+    kept = ("There is an unexplained discrepancy. The withdrawal has no documented reason "
+            "and, at over 25% of the average balance, needs a reason code.")
+    r.append(check("safety net adds nothing when all are mentioned",
+                   _ensure_discrepancy_reported(kept, "get_escrow_history", D105_HISTORY) == kept))
 
     passed = sum(results)
     print(f"\nEscrow checks: {passed}/{len(results)} passed")
