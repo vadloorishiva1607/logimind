@@ -1,0 +1,79 @@
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">LM</span>
+    <div>
+      <h1>LogiMind</h1>
+      <p>Logistics assistant</p>
+    </div>
+  </div>
+  <div class="controls">
+    <label for="role">Role</label>
+    <select id="role" [(ngModel)]="role">
+      @for (r of roles; track r.value) {
+        <option [value]="r.value">{{ r.label }}</option>
+      }
+    </select>
+    <button class="ghost" (click)="newConversation()">New conversation</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="sidebar">
+    <h2>Quick actions</h2>
+    <ul>
+      @for (a of quickActions; track a.label) {
+        <li>
+          <button class="quick" (click)="send(a.question)" [disabled]="loading">{{ a.label }}</button>
+        </li>
+      }
+    </ul>
+  </aside>
+
+  <section class="chat">
+    <div class="messages" #scrollArea>
+      @if (messages.length === 0) {
+        <div class="empty">
+          <h2>Ask about a driver, a shipment or a policy</h2>
+          <p>For example: "Why did D102 settlement drop?" or "What is the escrow withdrawal policy?"</p>
+        </div>
+      }
+      @for (m of messages; track $index) {
+        <div class="row" [class.user]="m.from === 'user'">
+          <div class="bubble" [class.user]="m.from === 'user'" [class.error]="m.error">
+            <p class="text">{{ m.text }}</p>
+            @if (m.from === 'bot' && !m.error) {
+              <div class="chips">
+                @for (a of m.agents ?? []; track a) {
+                  <span class="chip">{{ agentLabel(a) }}</span>
+                } @empty {
+                  <span class="chip muted">No agent: guardrail or clarification</span>
+                }
+              </div>
+            }
+          </div>
+        </div>
+      }
+      @if (loading) {
+        <div class="row">
+          <div class="bubble typing">LogiMind is thinking…</div>
+        </div>
+      }
+    </div>
+
+    <form class="composer" (ngSubmit)="send()">
+      <input
+        name="question"
+        [(ngModel)]="question"
+        placeholder="Ask a question, e.g. Why is shipment S10023 delayed?"
+        autocomplete="off"
+        [disabled]="loading"
+      />
+      <button type="submit" [disabled]="loading || !question.trim()">Send</button>
+    </form>
+  </section>
+</main>
+
+<footer class="disclaimer">
+  LogiMind gives recommendations only. It cannot terminate, approve, transfer or change anything;
+  those actions stay in the Logistics Application.
+</footer>
