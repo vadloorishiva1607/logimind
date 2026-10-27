@@ -10,13 +10,20 @@ comparison with the driver's own earlier average and the fleet, and the
 anomaly flags. The LLM only explains. The output guardrail checks the
 numbers, and a safety net guarantees every flag reaches the user.
 """
+from datetime import date, timedelta
+
 from src.agent.output_guardrail import check_answer
 from src.models.llm_client import get_llm
 from src.tools.fuel_mcp_client import get_fuel_history_via_mcp
 
-# Anomaly rules. Demo assumptions, stated openly in the context.
-UNUSUAL_SHARE = 0.15   # 15% worse than the driver's earlier average = flag
-MIN_HISTORY = 3        # fewer fill-ups than this: too few for a trend
+# Fuel Reimbursement and Deduction Policy rules.
+MPG_BASELINE = 6.5         # "A fuel efficiency baseline of 6.5 MPG ..."
+MPG_FLAG_SHARE = 0.15      # "... below this baseline by more than 15 percent ... trigger
+                           #  an automatic flag for Fleet Maintenance review"
+COST_ANOMALY_USD = 50      # "Fuel deductions above $50 more than the driver's trailing
+TRAILING_DAYS = 28         #  4-week average should be treated as anomalous"
+RETAIL_DIFF_SHARE = 0.10   # reimbursed at the negotiated rate when retail differs by >10%
+MIN_HISTORY = 3            # fewer fill-ups than this: too few for a trend
 
 FUEL_SYSTEM_PROMPT = """You are LogiMind's Fuel agent. Answer using ONLY \
 the fuel data provided below, and quote specific dates and figures from it.
@@ -26,8 +33,9 @@ Rules:
 recompute them.
 2. For a cost question, start with the cost before and after, then explain \
 how much came from more gallons and how much from a higher price per gallon.
-3. Report every flag in the data, with its figures, and compare with the \
-driver's earlier average and the fleet average.
+3. Report every flag in the data, with its figures and the policy rule it \
+comes from (the Fuel Reimbursement and Deduction Policy), and compare with \
+the fleet average.
 4. Do not guess why a price or efficiency changed (for example route, \
 weather or vehicle); the data does not say. You may suggest what to check.
 5. If the history is too short for a trend, say so.
@@ -95,15 +103,33 @@ def analyse(rows: list[dict], fleet) -> dict:
         base_mpg = round(sum(mpgs) / len(mpgs), 2) if mpgs else None
         result["baseline"] = {"count": len(earlier), "ppg": base_ppg, "mpg": base_mpg,
                               "p_ppg": _pct(result["ppg"], base_ppg), "p_mpg": _pct(latest["mpg"], base_mpg)}
-        b = result["baseline"]
-        if b["p_ppg"] is not None and b["p_ppg"] >= UNUSUAL_SHARE * 100:
-            result["flags"].append(("price",
-                f"Unusual price: {_money(result['ppg'], 3)} per gallon on {latest['transaction_date']} is "
-                f"{_pct_text(b['p_ppg'])} above the driver's earlier average of {_money(base_ppg, 3)}."))
-        if b["p_mpg"] is not None and b["p_mpg"] <= -UNUSUAL_SHARE * 100:
+
+    # Policy rule 1: deduction more than $50 above the trailing 4-week average.
+    latest_day = date.fromisoformat(latest["transaction_date"])
+    trailing = [r for r in rows[1:]
+                if latest_day - timedelta(days=TRAILING_DAYS) <= date.fromisoformat(r["transaction_date"]) < latest_day
+                and r["cost_usd"] is not None]
+    if trailing:
+        avg = round(sum(r["cost_usd"] for r in trailing) / len(trailing), 2)
+        over = round(latest["cost_usd"] - avg, 2)
+        result["trailing"] = {"count": len(trailing), "avg": avg, "over": over}
+        if over > COST_ANOMALY_USD:
+            result["flags"].append(("cost",
+                f"Anomalous fuel deduction: {_money(latest['cost_usd'])} on {latest['transaction_date']} is "
+                f"{_money(over)} above the trailing 4-week average of {_money(avg)} "
+                f"({len(trailing)} fill-ups). The Fuel policy treats more than {_money(COST_ANOMALY_USD)} "
+                f"above that average as anomalous."))
+
+    # Policy rule 2: MPG more than 15% below the 6.5 MPG baseline.
+    if latest["mpg"] is not None:
+        below = _pct(latest["mpg"], MPG_BASELINE)
+        result["vs_baseline"] = below
+        if below <= -MPG_FLAG_SHARE * 100:
             result["flags"].append(("mpg",
-                f"Efficiency drop: {latest['mpg']} MPG on {latest['transaction_date']} is "
-                f"{_pct_text(b['p_mpg'])} against the driver's earlier average of {base_mpg} MPG."))
+                f"Efficiency below baseline: {latest['mpg']} MPG on {latest['transaction_date']} is "
+                f"{_pct_text(below)} against the {MPG_BASELINE} MPG baseline. The Fuel policy flags more "
+                f"than {MPG_FLAG_SHARE * 100:g}% below for Fleet Maintenance review, as it may indicate "
+                f"a mechanical issue rather than driving behavior."))
     return result
 
 
@@ -127,10 +153,20 @@ def build_fuel_context(driver_id: str, rows: list[dict], fleet) -> tuple[str, di
             lines.append(f"WHY THE COST CHANGED: {_signed(s['volume'])} from the change in gallons and "
                          f"{_signed(s['price'])} from the change in price per gallon (total {_signed(p['d_cost'])}).")
 
+    if "trailing" in a:
+        t = a["trailing"]
+        lines.append(f"TRAILING 4-WEEK AVERAGE DEDUCTION ({t['count']} fill-ups before this one): "
+                     f"{_money(t['avg'])}. Latest is {_signed(t['over'])} against it.")
+    if "vs_baseline" in a:
+        lines.append(f"POLICY MPG BASELINE: {MPG_BASELINE} MPG. Latest is {_pct_text(a['vs_baseline'])} against it.")
     if "baseline" in a:
         b = a["baseline"]
         lines.append(f"DRIVER'S EARLIER AVERAGE ({b['count']} earlier fill-ups): {_money(b['ppg'], 3)} per gallon, "
-                     f"{b['mpg']} MPG. Latest vs this: price {_pct_text(b['p_ppg'])}, MPG {_pct_text(b['p_mpg'])}.")
+                     f"{b['mpg']} MPG. Latest price per gallon is {_pct_text(b['p_ppg'])} against it.")
+        if b["p_ppg"] is not None and b["p_ppg"] > RETAIL_DIFF_SHARE * 100:
+            lines.append(f"PRICE NOTE: drivers are reimbursed at the company-negotiated rate when the retail "
+                         f"price differs from it by more than {RETAIL_DIFF_SHARE * 100:g}%. The negotiated rate "
+                         f"is not in this data, so Finance should check whether reimbursement applies.")
     if fleet:
         lines.append(f"FLEET AVERAGE (same period, {fleet['drivers']} drivers): "
                      f"{_money(fleet['price_per_gallon'], 3)} per gallon, {fleet['mpg']} MPG.")
@@ -139,7 +175,7 @@ def build_fuel_context(driver_id: str, rows: list[dict], fleet) -> tuple[str, di
         "Enough for a trend." if a["enough_history"] else
         f"Too few for a trend (at least {MIN_HISTORY} are needed)."))
 
-    lines += ["", f"FLAGS (threshold: {UNUSUAL_SHARE * 100:g}% worse than the driver's earlier average):"]
+    lines += ["", "FLAGS (Fuel Reimbursement and Deduction Policy):"]
     if a["flags"]:
         lines += [f"- {text}" for _, text in a["flags"]]
         lines.append("- These changes may also explain changes in settlement fuel deductions; "
@@ -155,7 +191,7 @@ def build_fuel_context(driver_id: str, rows: list[dict], fleet) -> tuple[str, di
 
 
 # Words that show the answer reported each kind of flag.
-_FLAG_WORDS = {"price": ("price",), "mpg": ("mpg", "efficien")}
+_FLAG_WORDS = {"cost": ("anomal", "trailing"), "mpg": ("baseline", "maintenance")}
 
 
 def _ensure_flags_reported(answer: str, analysis: dict) -> str:

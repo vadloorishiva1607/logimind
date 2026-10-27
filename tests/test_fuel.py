@@ -36,12 +36,17 @@ def run():
                    round(a["split"]["volume"] + a["split"]["price"], 2) == p["d_cost"]))
     r.append(check("most of the rise came from price, not gallons",
                    a["split"]["price"] > a["split"]["volume"] > 0))
-    r.append(check("price flag raised (well above the 15% threshold)", any(k == "price" for k, _ in a["flags"])))
-    r.append(check("efficiency flag raised (MPG well below earlier average)", any(k == "mpg" for k, _ in a["flags"])))
+    r.append(check("trailing 4-week average $679.21 (Sep 20, 13, 6, Aug 30)",
+                   a["trailing"]["avg"] == 679.21 and a["trailing"]["count"] == 4))
+    r.append(check("cost flag: $358.04 above that average (policy: more than $50)",
+                   a["trailing"]["over"] == 358.04 and any(k == "cost" for k, _ in a["flags"])))
+    r.append(check("MPG flag: 5.24 is -19.4% against the 6.5 baseline (policy: more than 15% below)",
+                   a["vs_baseline"] == -19.4 and any(k == "mpg" for k, _ in a["flags"])))
     r.append(check("6 fill-ups is enough for a trend", a["enough_history"]))
 
-    steady = D102_ROWS[1:]  # without the Sep 27 spike
-    r.append(check("no flags for the steady weeks before Sep 27", analyse(steady, FLEET)["flags"] == []))
+    sep13 = D102_ROWS[2:]  # as if Sep 13 were the latest fill-up
+    r.append(check("no flags for Sep 13 ($677.70 vs average $680.04; 6.26 MPG within 15% of 6.5)",
+                   analyse(sep13, FLEET)["flags"] == []))
     r.append(check("2 fill-ups is too few for a trend", not analyse(D102_ROWS[:2], FLEET)["enough_history"]))
     r.append(check("a single fill-up works (no comparison, no crash)",
                    "previous" not in analyse(D102_ROWS[:1], FLEET)))
@@ -54,9 +59,9 @@ def run():
 
     added = _ensure_flags_reported("The cost went up.", a)
     r.append(check("safety net adds both flags when the answer has neither",
-                   "Unusual price" in added and "Efficiency drop" in added))
-    r.append(check("safety net adds nothing when both are mentioned",
-                   _ensure_flags_reported("The price rose and MPG fell.", a) == "The price rose and MPG fell."))
+                   "Anomalous fuel deduction" in added and "Efficiency below baseline" in added))
+    kept = "The deduction is anomalous and MPG is below the 6.5 baseline."
+    r.append(check("safety net adds nothing when both are mentioned", _ensure_flags_reported(kept, a) == kept))
 
     print(f"\nFuel checks: {sum(r)}/{len(r)} passed")
     print("\n--- Context the LLM will see for D102 ---\n" + ctx)
