@@ -103,14 +103,14 @@ def supervisor_node(state: GraphState) -> GraphState:
 
     if ship_match:
         route, reason = "shipment", f"shipment ID {shipment_id} in the question"
+    elif policy_kw and not match:
+        route, reason = "rag", f"matched policy keyword '{policy_kw}' and no driver ID typed"    
     elif driver_id:    
         route, reason = _pick_driver_agent(question, state.get("last_agent"))
         if not match:
             reason += f" (driver {driver_id} taken from memory)"
     elif shipment_id and state.get("last_agent") == "shipment":
         route, reason = "shipment", f"follow-up about shipment {shipment_id} (from memory)"        
-    elif policy_kw:
-        route, reason = "rag", f"no driver ID; matched policy keyword '{policy_kw}'"
     else:
         # Negative scenario (Design Doc Section 5, Orchestration Layer):
         # no agent can confidently answer -> ask for clarification instead
